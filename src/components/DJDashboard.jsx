@@ -73,11 +73,7 @@ export default function DJDashboard() {
     };
 
     if (loading) {
-        return (
-            <div className="noise-bg min-h-screen text-white flex items-center justify-center">
-                <div className="text-electric">Loading...</div>
-            </div>
-        );
+        return null;
     }
 
     // Login screen

@@ -12,11 +12,17 @@ import TestimonialsPage from './components/TestimonialsPage';
 import UserView from './components/UserView';
 import DJDashboard from './components/DJDashboard';
 import LiveModeToggle from './components/LiveModeToggle';
+import PaymentSuccess from './components/PaymentSuccess';
 
 // Main Landing Page Component
 function LandingPage() {
+  const [loading, setLoading] = useState(true);
   const [showTestimonials, setShowTestimonials] = useState(false);
   const navigate = useNavigate();
+
+  if (loading) {
+    return <WowLoader onComplete={() => setLoading(false)} />;
+  }
 
   if (showTestimonials) {
     return <TestimonialsPage onBack={() => setShowTestimonials(false)} />;
@@ -64,17 +70,12 @@ function LandingPage() {
 
 // App with Router
 function AppContent() {
-  const [loading, setLoading] = useState(true);
-
-  if (loading) {
-    return <WowLoader onComplete={() => setLoading(false)} />;
-  }
-
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/request" element={<UserView />} />
       <Route path="/dj" element={<DJDashboard />} />
+      <Route path="/payment-success" element={<PaymentSuccess />} />
     </Routes>
   );
 }

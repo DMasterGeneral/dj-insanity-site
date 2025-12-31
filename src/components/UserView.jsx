@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Link, Music, Send, Home } from 'lucide-react';
+import { Link, Music, Send, Home, DollarSign } from 'lucide-react';
 import { addSongRequest } from '../lib/firebase';
 import ITunesSearch from './iTunesSearch';
+import TipDJ from './TipDJ';
+
+// Generate unique request ID
+const generateRequestId = () => `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 export default function UserView() {
     const navigate = useNavigate();
@@ -12,35 +16,85 @@ export default function UserView() {
     const [tipAmount, setTipAmount] = useState(0);
     const [submitted, setSubmitted] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [showTipModal, setShowTipModal] = useState(false);
+    const [currentRequestId, setCurrentRequestId] = useState(null);
 
     const handleSongSelect = (song) => {
         setSelectedSong(song);
         setInputMode('search');
     };
 
-    const handleSubmit = async () => {
+    // Build the song request object
+    const buildSongRequest = () => {
         const content = inputMode === 'link' ? linkValue : selectedSong?.link;
         const title = inputMode === 'link' ? linkValue : selectedSong?.title;
 
-        if (!content) return;
+        if (!content) return null;
+
+        return {
+            type: inputMode === 'link' ? 'link' : 'search',
+            content: content,
+            title: title,
+        };
+    };
+
+    // Submit to Firebase (for no-tip requests only)
+    const submitToFirebase = async () => {
+        const songRequest = buildSongRequest();
+        if (!songRequest) return;
 
         setSubmitting(true);
         try {
             await addSongRequest({
-                type: inputMode === 'link' ? 'link' : 'search',
-                content: content,
-                title: title,
-                tip: tipAmount,
+                ...songRequest,
+                tip: 0,
             });
-            setLinkValue('');
-            setSelectedSong(null);
-            setTipAmount(0);
-            setSubmitted(true);
-            setTimeout(() => setSubmitted(false), 3000);
+            resetForm();
         } catch (error) {
             console.error('Request error:', error);
         }
         setSubmitting(false);
+    };
+
+    const resetForm = () => {
+        setLinkValue('');
+        setSelectedSong(null);
+        setTipAmount(0);
+        setSubmitted(true);
+        setTimeout(() => setSubmitted(false), 3000);
+    };
+
+    // Handle submit button click
+    const handleSubmit = async () => {
+        const songRequest = buildSongRequest();
+        if (!songRequest) return;
+
+        if (tipAmount > 0) {
+            // Generate unique ID for this request
+            const requestId = generateRequestId();
+            setCurrentRequestId(requestId);
+
+            // Store pending request in sessionStorage (per-tab, survives refresh but not tab close)
+            const pendingData = {
+                ...songRequest,
+                tip: tipAmount,
+                createdAt: Date.now(),
+            };
+            sessionStorage.setItem(`pending_request_${requestId}`, JSON.stringify(pendingData));
+
+            // Open Stripe modal
+            setShowTipModal(true);
+        } else {
+            // No tip, submit directly to Firebase
+            await submitToFirebase();
+        }
+    };
+
+    // Close tip modal without completing payment
+    const handleTipModalClose = () => {
+        setShowTipModal(false);
+        // Don't remove from sessionStorage - user might retry
+        // Old entries will be cleaned up by PaymentSuccess or browser close
     };
 
     return (
@@ -116,29 +170,37 @@ export default function UserView() {
                             placeholder="Paste YouTube, Spotify, SoundCloud, or Apple Music link..."
                             className="w-full h-32 bg-transparent text-white placeholder:text-white/30 focus:outline-none resize-none text-lg"
                             value={linkValue}
-                            onChange={e => setLinkValue(e.target.value)}
+                            onChange={(e) => setLinkValue(e.target.value)}
                         />
                     </div>
                 )}
 
-                {/* Tip Section */}
+                {/* Tip Selector */}
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                    <p className="text-white/50 text-sm mb-3">Add a tip to boost your request</p>
+                    <div className="flex items-center gap-2 mb-3">
+                        <DollarSign size={18} className="text-gold" />
+                        <p className="text-white/50 text-sm">Add a tip to boost your request</p>
+                    </div>
                     <div className="flex gap-2">
-                        {[0, 5, 10, 20].map(amount => (
+                        {[0, 5, 10, 20].map((amount) => (
                             <button
                                 key={amount}
                                 type="button"
                                 onClick={() => setTipAmount(amount)}
                                 className={`flex-1 py-2 rounded-xl font-bold transition-all ${tipAmount === amount
-                                    ? 'bg-gold text-black glow-gold'
-                                    : 'bg-white/10 text-white/70'
+                                        ? 'bg-gold text-black'
+                                        : 'bg-white/10 text-white/70 hover:bg-white/20'
                                     }`}
                             >
                                 {amount === 0 ? 'No Tip' : `$${amount}`}
                             </button>
                         ))}
                     </div>
+                    {tipAmount > 0 && (
+                        <p className="text-gold/70 text-xs text-center mt-2">
+                            💳 Payment will be processed securely via Stripe
+                        </p>
+                    )}
                 </div>
 
                 {/* Submit Button */}
@@ -146,9 +208,17 @@ export default function UserView() {
                     type="button"
                     onClick={handleSubmit}
                     disabled={submitting || (inputMode === 'search' ? !selectedSong : !linkValue.trim())}
-                    className="w-full py-4 bg-gradient-to-r from-electric to-blue-400 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 hover:opacity-90 transition-all active:scale-[0.98] disabled:opacity-50"
+                    className={`w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 ${tipAmount > 0
+                            ? 'bg-gradient-to-r from-gold to-yellow-500 text-black'
+                            : 'bg-gradient-to-r from-electric to-blue-400 text-white'
+                        }`}
                 >
-                    <Send size={20} /> {submitting ? 'Sending...' : 'Submit Request'}
+                    <Send size={20} />
+                    {submitting
+                        ? 'Sending...'
+                        : tipAmount > 0
+                            ? `Submit with $${tipAmount} Tip`
+                            : 'Submit Request'}
                 </button>
             </div>
 
@@ -160,6 +230,14 @@ export default function UserView() {
             >
                 <Home size={20} />
             </button>
+
+            {/* Stripe Tip Modal */}
+            <TipDJ
+                isOpen={showTipModal}
+                onClose={handleTipModalClose}
+                amount={tipAmount}
+                requestId={currentRequestId}
+            />
         </div>
     );
 }
