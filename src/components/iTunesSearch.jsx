@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Search, X, Music2 } from 'lucide-react';
 
 export default function MusicSearch({ onSelectSong }) {
@@ -7,10 +7,21 @@ export default function MusicSearch({ onSelectSong }) {
     const [loading, setLoading] = useState(false);
     const [searched, setSearched] = useState(false);
     const [error, setError] = useState('');
+    const lastSearchTime = useRef(0);
 
     // Check if likely on mobile
     const isMobile = () => {
         return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    };
+
+    // Rate limit helper - MusicBrainz requires 1 second between requests
+    const waitForRateLimit = async () => {
+        const now = Date.now();
+        const timeSinceLastSearch = now - lastSearchTime.current;
+        if (timeSinceLastSearch < 1100) {
+            await new Promise(resolve => setTimeout(resolve, 1100 - timeSinceLastSearch));
+        }
+        lastSearchTime.current = Date.now();
     };
 
     const searchSongs = useCallback(async () => {
@@ -46,13 +57,16 @@ export default function MusicSearch({ onSelectSong }) {
             console.log('iTunes fetch failed, trying MusicBrainz...');
         }
 
-        // Fallback: MusicBrainz (has CORS, works everywhere)
+        // Fallback: MusicBrainz (has CORS, works everywhere but rate limited)
         try {
+            await waitForRateLimit();
+
             const mbUrl = `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&limit=10&fmt=json`;
             const response = await fetch(mbUrl, {
                 headers: {
                     'Accept': 'application/json',
-                    'User-Agent': 'DJInsanityApp/1.0 (contact@example.com)'
+                    // MusicBrainz requires descriptive User-Agent
+                    'User-Agent': 'DJInsanityApp/1.0.0 (https://djinsanity.com)'
                 }
             });
 
@@ -63,7 +77,7 @@ export default function MusicSearch({ onSelectSong }) {
                         id: track.id,
                         title: track.title,
                         artist: track['artist-credit']?.[0]?.name || 'Unknown Artist',
-                        artwork: null, // MusicBrainz doesn't have artwork
+                        artwork: null,
                         artworkLarge: null,
                         link: `https://musicbrainz.org/recording/${track.id}`,
                         source: 'musicbrainz'
@@ -71,9 +85,14 @@ export default function MusicSearch({ onSelectSong }) {
                     setLoading(false);
                     return;
                 }
+            } else if (response.status === 503) {
+                // Rate limited - tell user to wait
+                setError('Search busy. Please wait a moment and try again.');
+                setLoading(false);
+                return;
             }
         } catch (e) {
-            console.log('MusicBrainz fetch also failed');
+            console.log('MusicBrainz fetch also failed:', e);
         }
 
         // Both failed - show message
