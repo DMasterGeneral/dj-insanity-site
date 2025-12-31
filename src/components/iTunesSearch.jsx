@@ -8,6 +8,11 @@ export default function MusicSearch({ onSelectSong }) {
     const [searched, setSearched] = useState(false);
     const [error, setError] = useState('');
 
+    // Check if likely on mobile
+    const isMobile = () => {
+        return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    };
+
     const searchSongs = useCallback(async () => {
         if (!query.trim()) return;
 
@@ -16,11 +21,10 @@ export default function MusicSearch({ onSelectSong }) {
         setError('');
         setResults([]);
 
-        // Try multiple approaches for best compatibility
+        // Try iTunes first (works on desktop)
         const iTunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=10`;
 
         try {
-            // Approach 1: Direct fetch (works on desktop, may fail on mobile)
             const response = await fetch(iTunesUrl);
             if (response.ok) {
                 const data = await response.json();
@@ -31,41 +35,53 @@ export default function MusicSearch({ onSelectSong }) {
                         artist: track.artistName,
                         artwork: track.artworkUrl60,
                         artworkLarge: track.artworkUrl100,
-                        link: track.trackViewUrl
+                        link: track.trackViewUrl,
+                        source: 'itunes'
                     })));
                     setLoading(false);
                     return;
                 }
             }
         } catch (e) {
-            console.log('Direct fetch failed, trying proxy...');
+            console.log('iTunes fetch failed, trying MusicBrainz...');
         }
 
+        // Fallback: MusicBrainz (has CORS, works everywhere)
         try {
-            // Approach 2: CORS proxy fallback
-            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(iTunesUrl)}`;
-            const response = await fetch(proxyUrl);
+            const mbUrl = `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&limit=10&fmt=json`;
+            const response = await fetch(mbUrl, {
+                headers: {
+                    'Accept': 'application/json',
+                    'User-Agent': 'DJInsanityApp/1.0 (contact@example.com)'
+                }
+            });
+
             if (response.ok) {
                 const data = await response.json();
-                if (data.results) {
-                    setResults(data.results.map(track => ({
-                        id: track.trackId,
-                        title: track.trackName,
-                        artist: track.artistName,
-                        artwork: track.artworkUrl60,
-                        artworkLarge: track.artworkUrl100,
-                        link: track.trackViewUrl
+                if (data.recordings && data.recordings.length > 0) {
+                    setResults(data.recordings.map(track => ({
+                        id: track.id,
+                        title: track.title,
+                        artist: track['artist-credit']?.[0]?.name || 'Unknown Artist',
+                        artwork: null, // MusicBrainz doesn't have artwork
+                        artworkLarge: null,
+                        link: `https://musicbrainz.org/recording/${track.id}`,
+                        source: 'musicbrainz'
                     })));
                     setLoading(false);
                     return;
                 }
             }
         } catch (e) {
-            console.log('Proxy fetch also failed');
+            console.log('MusicBrainz fetch also failed');
         }
 
-        // Both failed
-        setError('Search unavailable. Try pasting a link instead.');
+        // Both failed - show message
+        if (isMobile()) {
+            setError('Mobile search limited. Try the "Paste Link" option!');
+        } else {
+            setError('No results found. Try a different search term.');
+        }
         setLoading(false);
     }, [query]);
 
@@ -164,6 +180,9 @@ export default function MusicSearch({ onSelectSong }) {
                                     <p className="font-medium truncate">{track.title}</p>
                                     <p className="text-white/50 text-sm truncate">{track.artist}</p>
                                 </div>
+                                {track.source === 'musicbrainz' && (
+                                    <span className="text-xs text-white/30 bg-white/5 px-2 py-1 rounded">MB</span>
+                                )}
                             </button>
                         ))
                     )}
