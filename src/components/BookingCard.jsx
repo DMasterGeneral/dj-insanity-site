@@ -135,8 +135,8 @@ export default function BookingCard() {
               type="button"
               onClick={() => setFormData({ ...formData, contactPreference: 'call' })}
               className={`px-3 py-2 flex items-center gap-1 text-sm transition-all ${formData.contactPreference === 'call'
-                  ? 'bg-electric text-white'
-                  : 'text-white/50 hover:text-white/80'
+                ? 'bg-electric text-white'
+                : 'text-white/50 hover:text-white/80'
                 }`}
               title="Prefer Call"
             >
@@ -146,8 +146,8 @@ export default function BookingCard() {
               type="button"
               onClick={() => setFormData({ ...formData, contactPreference: 'text' })}
               className={`px-3 py-2 flex items-center gap-1 text-sm transition-all ${formData.contactPreference === 'text'
-                  ? 'bg-electric text-white'
-                  : 'text-white/50 hover:text-white/80'
+                ? 'bg-electric text-white'
+                : 'text-white/50 hover:text-white/80'
                 }`}
               title="Prefer Text"
             >
@@ -160,13 +160,19 @@ export default function BookingCard() {
         <div className="relative">
           <input
             type="date"
-            className={`${inputClass('date')} text-white/70 [color-scheme:dark] appearance-none min-h-[48px]`}
+            className={`${inputClass('date')} text-white/70 [color-scheme:dark] appearance-none min-h-[48px] ${!formData.date ? 'text-transparent' : ''
+              }`}
             value={formData.date}
             onChange={e => {
               setFormData({ ...formData, date: e.target.value });
               if (errors.date) setErrors({ ...errors, date: false });
             }}
           />
+          {!formData.date && (
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none">
+              Select Event Date
+            </span>
+          )}
         </div>
 
         {/* Time Range */}
