@@ -72,7 +72,7 @@ export default function MusicSearch({ onSelectSong }) {
 
         // === STRATEGY 1: iTunes (works on desktop) ===
         try {
-            const iTunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=10`;
+            const iTunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=10&explicit=Yes`;
             const response = await fetch(iTunesUrl);
             if (response.ok) {
                 const data = await response.json();
