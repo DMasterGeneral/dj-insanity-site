@@ -1,5 +1,12 @@
 import { useState, useCallback, useRef } from 'react';
-import { Search, X, Music2 } from 'lucide-react';
+import { Search, X, Music2, Youtube } from 'lucide-react';
+
+// Piped public instances (YouTube alternative with CORS)
+const PIPED_INSTANCES = [
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.r4fo.com',
+    'https://api.piped.yt',
+];
 
 export default function MusicSearch({ onSelectSong }) {
     const [query, setQuery] = useState('');
@@ -24,6 +31,35 @@ export default function MusicSearch({ onSelectSong }) {
         lastSearchTime.current = Date.now();
     };
 
+    // Try Piped instances in order
+    const searchPiped = async (searchQuery) => {
+        for (const instance of PIPED_INSTANCES) {
+            try {
+                const response = await fetch(
+                    `${instance}/search?q=${encodeURIComponent(searchQuery)}&filter=music_songs`,
+                    { signal: AbortSignal.timeout(5000) }
+                );
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.items && data.items.length > 0) {
+                        return data.items.slice(0, 10).map(item => ({
+                            id: item.url?.split('v=')[1] || item.url,
+                            title: item.title,
+                            artist: item.uploaderName || 'YouTube',
+                            artwork: item.thumbnail,
+                            artworkLarge: item.thumbnail,
+                            link: `https://youtube.com${item.url}`,
+                            source: 'youtube'
+                        }));
+                    }
+                }
+            } catch (e) {
+                console.log(`Piped instance ${instance} failed, trying next...`);
+            }
+        }
+        return null;
+    };
+
     const searchSongs = useCallback(async () => {
         if (!query.trim()) return;
 
@@ -32,10 +68,9 @@ export default function MusicSearch({ onSelectSong }) {
         setError('');
         setResults([]);
 
-        // Try iTunes first (works on desktop)
-        const iTunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=10`;
-
+        // === STRATEGY 1: iTunes (works on desktop) ===
         try {
+            const iTunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=10`;
             const response = await fetch(iTunesUrl);
             if (response.ok) {
                 const data = await response.json();
@@ -54,10 +89,22 @@ export default function MusicSearch({ onSelectSong }) {
                 }
             }
         } catch (e) {
-            console.log('iTunes fetch failed, trying MusicBrainz...');
+            console.log('iTunes fetch failed, trying Piped...');
         }
 
-        // Fallback: MusicBrainz (has CORS, works everywhere but rate limited)
+        // === STRATEGY 2: Piped/YouTube (works everywhere with CORS) ===
+        try {
+            const pipedResults = await searchPiped(query);
+            if (pipedResults && pipedResults.length > 0) {
+                setResults(pipedResults);
+                setLoading(false);
+                return;
+            }
+        } catch (e) {
+            console.log('Piped fetch failed, trying MusicBrainz...');
+        }
+
+        // === STRATEGY 3: MusicBrainz (backup, rate limited) ===
         try {
             await waitForRateLimit();
 
@@ -65,7 +112,6 @@ export default function MusicSearch({ onSelectSong }) {
             const response = await fetch(mbUrl, {
                 headers: {
                     'Accept': 'application/json',
-                    // MusicBrainz requires descriptive User-Agent
                     'User-Agent': 'DJInsanityApp/1.0.0 (https://djinsanity.com)'
                 }
             });
@@ -86,7 +132,6 @@ export default function MusicSearch({ onSelectSong }) {
                     return;
                 }
             } else if (response.status === 503) {
-                // Rate limited - tell user to wait
                 setError('Search busy. Please wait a moment and try again.');
                 setLoading(false);
                 return;
@@ -95,7 +140,7 @@ export default function MusicSearch({ onSelectSong }) {
             console.log('MusicBrainz fetch also failed:', e);
         }
 
-        // Both failed - show message
+        // All strategies failed
         if (isMobile()) {
             setError('Mobile search limited. Try the "Paste Link" option!');
         } else {
@@ -121,6 +166,17 @@ export default function MusicSearch({ onSelectSong }) {
         setResults([]);
         setSearched(false);
         setError('');
+    };
+
+    const getSourceBadge = (source) => {
+        switch (source) {
+            case 'youtube':
+                return <Youtube size={14} className="text-red-400" />;
+            case 'musicbrainz':
+                return <span className="text-xs text-white/30">MB</span>;
+            default:
+                return null;
+        }
     };
 
     return (
@@ -199,9 +255,9 @@ export default function MusicSearch({ onSelectSong }) {
                                     <p className="font-medium truncate">{track.title}</p>
                                     <p className="text-white/50 text-sm truncate">{track.artist}</p>
                                 </div>
-                                {track.source === 'musicbrainz' && (
-                                    <span className="text-xs text-white/30 bg-white/5 px-2 py-1 rounded">MB</span>
-                                )}
+                                <div className="flex-shrink-0">
+                                    {getSourceBadge(track.source)}
+                                </div>
                             </button>
                         ))
                     )}
