@@ -1,65 +1,71 @@
 import { useState, useCallback } from 'react';
 import { Search, X, Music2 } from 'lucide-react';
 
-// JSONP helper for iTunes API (required for mobile Safari CORS support)
-let jsonpCounter = 0;
-const jsonp = (url) => {
-    return new Promise((resolve, reject) => {
-        const callbackName = `itunes_callback_${++jsonpCounter}`;
-        const script = document.createElement('script');
-
-        // Cleanup function
-        const cleanup = () => {
-            delete window[callbackName];
-            script.remove();
-        };
-
-        // Set timeout for request
-        const timeout = setTimeout(() => {
-            cleanup();
-            reject(new Error('Request timeout'));
-        }, 10000);
-
-        // Define callback
-        window[callbackName] = (data) => {
-            clearTimeout(timeout);
-            cleanup();
-            resolve(data);
-        };
-
-        // Add callback to URL and execute
-        script.src = `${url}&callback=${callbackName}`;
-        script.onerror = () => {
-            clearTimeout(timeout);
-            cleanup();
-            reject(new Error('Script load error'));
-        };
-
-        document.head.appendChild(script);
-    });
-};
-
-export default function iTunesSearch({ onSelectSong }) {
+export default function MusicSearch({ onSelectSong }) {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searched, setSearched] = useState(false);
+    const [error, setError] = useState('');
 
     const searchSongs = useCallback(async () => {
         if (!query.trim()) return;
 
         setLoading(true);
         setSearched(true);
+        setError('');
+        setResults([]);
+
+        // Try multiple approaches for best compatibility
+        const iTunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=10`;
+
         try {
-            // Use JSONP for cross-browser/mobile compatibility
-            const data = await jsonp(
-                `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=10`
-            );
-            setResults(data.results || []);
-        } catch (error) {
-            console.error('Search error:', error);
-            setResults([]);
+            // Approach 1: Direct fetch (works on desktop, may fail on mobile)
+            const response = await fetch(iTunesUrl);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.results && data.results.length > 0) {
+                    setResults(data.results.map(track => ({
+                        id: track.trackId,
+                        title: track.trackName,
+                        artist: track.artistName,
+                        artwork: track.artworkUrl60,
+                        artworkLarge: track.artworkUrl100,
+                        link: track.trackViewUrl
+                    })));
+                    setLoading(false);
+                    return;
+                }
+            }
+        } catch (e) {
+            console.log('Direct fetch failed, trying proxy...');
         }
+
+        try {
+            // Approach 2: CORS proxy fallback
+            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(iTunesUrl)}`;
+            const response = await fetch(proxyUrl);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.results) {
+                    setResults(data.results.map(track => ({
+                        id: track.trackId,
+                        title: track.trackName,
+                        artist: track.artistName,
+                        artwork: track.artworkUrl60,
+                        artworkLarge: track.artworkUrl100,
+                        link: track.trackViewUrl
+                    })));
+                    setLoading(false);
+                    return;
+                }
+            }
+        } catch (e) {
+            console.log('Proxy fetch also failed');
+        }
+
+        // Both failed
+        setError('Search unavailable. Try pasting a link instead.');
         setLoading(false);
     }, [query]);
 
@@ -71,16 +77,15 @@ export default function iTunesSearch({ onSelectSong }) {
     };
 
     const handleSelect = (track) => {
-        // Pass song info back to parent
         onSelectSong({
-            title: `${track.trackName} - ${track.artistName}`,
-            link: track.trackViewUrl,
-            artwork: track.artworkUrl100
+            title: `${track.title} - ${track.artist}`,
+            link: track.link,
+            artwork: track.artworkLarge || track.artwork
         });
-        // Clear search
         setQuery('');
         setResults([]);
         setSearched(false);
+        setError('');
     };
 
     return (
@@ -104,6 +109,7 @@ export default function iTunesSearch({ onSelectSong }) {
                                 setQuery('');
                                 setResults([]);
                                 setSearched(false);
+                                setError('');
                             }}
                             className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
                         >
@@ -121,8 +127,15 @@ export default function iTunesSearch({ onSelectSong }) {
                 </button>
             </div>
 
+            {/* Error Message */}
+            {error && (
+                <div className="text-orange-400 text-sm text-center py-2">
+                    {error}
+                </div>
+            )}
+
             {/* Results */}
-            {searched && (
+            {searched && !error && (
                 <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden max-h-[300px] overflow-y-auto">
                     {results.length === 0 ? (
                         <div className="p-4 text-center text-white/40">
@@ -131,14 +144,14 @@ export default function iTunesSearch({ onSelectSong }) {
                     ) : (
                         results.map((track, index) => (
                             <button
-                                key={track.trackId || index}
+                                key={track.id || index}
                                 type="button"
                                 onClick={() => handleSelect(track)}
                                 className="w-full flex items-center gap-3 p-3 hover:bg-white/10 transition-all text-left border-b border-white/5 last:border-b-0"
                             >
-                                {track.artworkUrl60 ? (
+                                {track.artwork ? (
                                     <img
-                                        src={track.artworkUrl60}
+                                        src={track.artwork}
                                         alt=""
                                         className="w-12 h-12 rounded-lg object-cover"
                                     />
@@ -148,8 +161,8 @@ export default function iTunesSearch({ onSelectSong }) {
                                     </div>
                                 )}
                                 <div className="flex-1 min-w-0">
-                                    <p className="font-medium truncate">{track.trackName}</p>
-                                    <p className="text-white/50 text-sm truncate">{track.artistName}</p>
+                                    <p className="font-medium truncate">{track.title}</p>
+                                    <p className="text-white/50 text-sm truncate">{track.artist}</p>
                                 </div>
                             </button>
                         ))

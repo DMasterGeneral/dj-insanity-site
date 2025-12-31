@@ -1,15 +1,17 @@
-// DJ Insanity - Stripe Tip Payment Worker
-// Deploy this to Cloudflare Workers (Quick Edit - no bundler needed)
+// DJ Insanity - Stripe + iTunes Proxy Worker
+// Deploy this to Cloudflare Workers
 
 // Required environment variable:
 // - STRIPE_SECRET_KEY: Your Stripe secret key
 
 export default {
     async fetch(request, env) {
+        const url = new URL(request.url);
+
         // CORS headers
         const corsHeaders = {
-            'Access-Control-Allow-Origin': '*', // In production, restrict to your domain
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type',
         };
 
@@ -18,7 +20,54 @@ export default {
             return new Response(null, { headers: corsHeaders });
         }
 
-        // Handle POST request to create PaymentIntent
+        // Route: GET /itunes?q=searchterm - Proxy iTunes Search API
+        if (request.method === 'GET' && url.pathname === '/itunes') {
+            const searchTerm = url.searchParams.get('q');
+            if (!searchTerm) {
+                return new Response(
+                    JSON.stringify({ error: 'Missing search term', results: [] }),
+                    { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+                );
+            }
+
+            try {
+                const iTunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(searchTerm)}&media=music&limit=10`;
+
+                const iTunesResponse = await fetch(iTunesUrl, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (compatible; DJInsanityBot/1.0)',
+                        'Accept': 'application/json',
+                    },
+                });
+
+                if (!iTunesResponse.ok) {
+                    throw new Error(`iTunes API returned ${iTunesResponse.status}`);
+                }
+
+                const text = await iTunesResponse.text();
+
+                // Parse JSON (iTunes sometimes returns weird encoding)
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    throw new Error('Failed to parse iTunes response');
+                }
+
+                return new Response(
+                    JSON.stringify(data),
+                    { headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+                );
+            } catch (error) {
+                console.error('iTunes error:', error.message);
+                return new Response(
+                    JSON.stringify({ error: error.message, results: [] }),
+                    { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+                );
+            }
+        }
+
+        // Route: POST / - Create Stripe PaymentIntent
         if (request.method === 'POST') {
             try {
                 const { amount } = await request.json();
@@ -31,7 +80,7 @@ export default {
                     );
                 }
 
-                // Create PaymentIntent using Stripe REST API (no npm package needed)
+                // Create PaymentIntent using Stripe REST API
                 const stripeResponse = await fetch('https://api.stripe.com/v1/payment_intents', {
                     method: 'POST',
                     headers: {
@@ -39,7 +88,7 @@ export default {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
                     body: new URLSearchParams({
-                        'amount': String(Math.round(amount * 100)), // Convert to cents
+                        'amount': String(Math.round(amount * 100)),
                         'currency': 'usd',
                         'automatic_payment_methods[enabled]': 'true',
                         'description': `DJ Insanity Tip - $${amount}`,
@@ -65,6 +114,6 @@ export default {
             }
         }
 
-        return new Response('Method Not Allowed', { status: 405, headers: corsHeaders });
+        return new Response('Not Found', { status: 404, headers: corsHeaders });
     },
 };
