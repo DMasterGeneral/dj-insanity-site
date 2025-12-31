@@ -74,7 +74,7 @@ export default function DJDashboard() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-midnight flex items-center justify-center">
+            <div className="noise-bg min-h-screen text-white flex items-center justify-center">
                 <div className="text-electric">Loading...</div>
             </div>
         );
@@ -83,7 +83,7 @@ export default function DJDashboard() {
     // Login screen
     if (!user) {
         return (
-            <div className="min-h-screen bg-midnight flex items-center justify-center p-6">
+            <div className="noise-bg min-h-screen text-white flex items-center justify-center p-6">
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-8 max-w-sm w-full">
                     <div className="text-center mb-6">
                         <Disc size={40} className="mx-auto text-electric" />
@@ -119,7 +119,7 @@ export default function DJDashboard() {
     }
 
     return (
-        <div className="min-h-screen bg-midnight p-6">
+        <div className="noise-bg min-h-screen text-white p-6">
             <div className="max-w-4xl mx-auto">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-6">
@@ -180,13 +180,24 @@ export default function DJDashboard() {
                             >
                                 <div className="col-span-1 text-white/40">{i + 1}</div>
                                 <div className="col-span-5">
-                                    <p className="font-medium truncate">{req.content}</p>
+                                    {req.content?.startsWith('http') ? (
+                                        <a
+                                            href={req.content}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="font-medium text-electric hover:underline truncate block"
+                                        >
+                                            {req.title || req.content}
+                                        </a>
+                                    ) : (
+                                        <p className="font-medium truncate">{req.title || req.content}</p>
+                                    )}
                                     <p className="text-white/40 text-xs">{getTimeAgo(req.timestamp)}</p>
                                 </div>
                                 <div className="col-span-2">
-                                    <span className={`px-2 py-1 rounded text-xs font-semibold ${req.type === 'link' ? 'bg-electric/20 text-electric' : 'bg-white/10 text-white/70'
+                                    <span className={`px-2 py-1 rounded text-xs font-semibold ${req.type === 'link' ? 'bg-electric/20 text-electric' : 'bg-purple-500/20 text-purple-400'
                                         }`}>
-                                        {req.type === 'link' ? '🔗 Link' : '📝 Text'}
+                                        {req.type === 'link' ? '🔗 Link' : '🎵 Search'}
                                     </span>
                                 </div>
                                 <div className="col-span-2">

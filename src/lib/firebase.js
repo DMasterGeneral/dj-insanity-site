@@ -22,11 +22,12 @@ const auth = getAuth(app);
 
 // ============ SONG REQUESTS ============
 
-export async function addSongRequest({ type, content, tip }) {
+export async function addSongRequest({ type, content, title, tip }) {
     try {
         await addDoc(collection(db, 'requests'), {
             type,
             content,
+            title: title || content, // Fallback to content if no title
             tip: tip || 0,
             status: 'pending',
             timestamp: serverTimestamp()

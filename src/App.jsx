@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { Disc } from 'lucide-react';
 import './index.css';
 
@@ -12,46 +13,13 @@ import UserView from './components/UserView';
 import DJDashboard from './components/DJDashboard';
 import LiveModeToggle from './components/LiveModeToggle';
 
-function App() {
-  const [loading, setLoading] = useState(true);
-  const [liveMode, setLiveMode] = useState(false);
-  const [viewMode, setViewMode] = useState('user'); // 'user' or 'dj'
+// Main Landing Page Component
+function LandingPage() {
   const [showTestimonials, setShowTestimonials] = useState(false);
-
-  if (loading) {
-    return <WowLoader onComplete={() => setLoading(false)} />;
-  }
+  const navigate = useNavigate();
 
   if (showTestimonials) {
     return <TestimonialsPage onBack={() => setShowTestimonials(false)} />;
-  }
-
-  if (liveMode) {
-    return (
-      <div className="noise-bg min-h-screen text-white">
-        {/* View Mode Toggle for Demo */}
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex bg-white/10 backdrop-blur-xl rounded-full p-1">
-          <button
-            onClick={() => setViewMode('user')}
-            className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${viewMode === 'user' ? 'bg-electric' : 'text-white/50'
-              }`}
-          >
-            📱 User View
-          </button>
-          <button
-            onClick={() => setViewMode('dj')}
-            className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${viewMode === 'dj' ? 'bg-electric' : 'text-white/50'
-              }`}
-          >
-            🎧 DJ Dashboard
-          </button>
-        </div>
-
-        {viewMode === 'user' ? <UserView /> : <DJDashboard />}
-
-        <LiveModeToggle onClick={() => setLiveMode(false)} isActive={true} />
-      </div>
-    );
   }
 
   return (
@@ -89,8 +57,33 @@ function App() {
         <p className="mt-2 text-white/20">Click the music icon to access Live Mode 🎵</p>
       </footer>
 
-      <LiveModeToggle onClick={() => setLiveMode(true)} isActive={false} />
+      <LiveModeToggle onClick={() => navigate('/request')} isActive={false} />
     </div>
+  );
+}
+
+// App with Router
+function AppContent() {
+  const [loading, setLoading] = useState(true);
+
+  if (loading) {
+    return <WowLoader onComplete={() => setLoading(false)} />;
+  }
+
+  return (
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/request" element={<UserView />} />
+      <Route path="/dj" element={<DJDashboard />} />
+    </Routes>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
   );
 }
 
