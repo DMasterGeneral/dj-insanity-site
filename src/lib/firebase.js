@@ -61,13 +61,17 @@ export async function archiveRequest(id) {
 
 // ============ BOOKINGS ============
 
-export async function addBooking({ name, email, date, eventType }) {
+export async function addBooking(bookingData) {
     try {
         await addDoc(collection(db, 'bookings'), {
-            name,
-            email,
-            date,
-            eventType,
+            name: bookingData.name,
+            phone: bookingData.phone,
+            contactPreference: bookingData.contactPreference,
+            date: bookingData.date,
+            startTime: bookingData.startTime,
+            endTime: bookingData.endTime,
+            timeRange: bookingData.timeRange,
+            eventType: bookingData.eventType,
             status: 'new',
             timestamp: serverTimestamp()
         });
