@@ -1,11 +1,12 @@
 import { useState, useCallback, useRef } from 'react';
 import { Search, X, Music2, Youtube } from 'lucide-react';
 
-// Piped public instances (YouTube alternative with CORS)
-const PIPED_INSTANCES = [
-    'https://pipedapi.kavin.rocks',
-    'https://pipedapi.r4fo.com',
-    'https://api.piped.yt',
+// Invidious instances (YouTube alternative with CORS) - more stable than Piped
+const INVIDIOUS_INSTANCES = [
+    'https://inv.nadeko.net',
+    'https://invidious.fdn.fr',
+    'https://invidious.private.coffee',
+    'https://iv.melmac.space',
 ];
 
 export default function MusicSearch({ onSelectSong }) {
@@ -31,30 +32,31 @@ export default function MusicSearch({ onSelectSong }) {
         lastSearchTime.current = Date.now();
     };
 
-    // Try Piped instances in order
-    const searchPiped = async (searchQuery) => {
-        for (const instance of PIPED_INSTANCES) {
+    // Try Invidious instances in order (YouTube search with CORS)
+    const searchInvidious = async (searchQuery) => {
+        for (const instance of INVIDIOUS_INSTANCES) {
             try {
                 const response = await fetch(
-                    `${instance}/search?q=${encodeURIComponent(searchQuery)}&filter=music_songs`,
+                    `${instance}/api/v1/search?q=${encodeURIComponent(searchQuery)}&type=video`,
                     { signal: AbortSignal.timeout(5000) }
                 );
                 if (response.ok) {
                     const data = await response.json();
-                    if (data.items && data.items.length > 0) {
-                        return data.items.slice(0, 10).map(item => ({
-                            id: item.url?.split('v=')[1] || item.url,
+                    if (Array.isArray(data) && data.length > 0) {
+                        // Filter for likely music content (videos with music-related titles)
+                        return data.slice(0, 10).map(item => ({
+                            id: item.videoId,
                             title: item.title,
-                            artist: item.uploaderName || 'YouTube',
-                            artwork: item.thumbnail,
-                            artworkLarge: item.thumbnail,
-                            link: `https://youtube.com${item.url}`,
+                            artist: item.author || 'YouTube',
+                            artwork: item.videoThumbnails?.[0]?.url || null,
+                            artworkLarge: item.videoThumbnails?.[2]?.url || item.videoThumbnails?.[0]?.url || null,
+                            link: `https://youtube.com/watch?v=${item.videoId}`,
                             source: 'youtube'
                         }));
                     }
                 }
             } catch (e) {
-                console.log(`Piped instance ${instance} failed, trying next...`);
+                console.log(`Invidious instance ${instance} failed, trying next...`);
             }
         }
         return null;
@@ -89,19 +91,19 @@ export default function MusicSearch({ onSelectSong }) {
                 }
             }
         } catch (e) {
-            console.log('iTunes fetch failed, trying Piped...');
+            console.log('iTunes fetch failed, trying Invidious...');
         }
 
-        // === STRATEGY 2: Piped/YouTube (works everywhere with CORS) ===
+        // === STRATEGY 2: Invidious/YouTube (CORS-friendly alternative) ===
         try {
-            const pipedResults = await searchPiped(query);
-            if (pipedResults && pipedResults.length > 0) {
-                setResults(pipedResults);
+            const invidiousResults = await searchInvidious(query);
+            if (invidiousResults && invidiousResults.length > 0) {
+                setResults(invidiousResults);
                 setLoading(false);
                 return;
             }
         } catch (e) {
-            console.log('Piped fetch failed, trying MusicBrainz...');
+            console.log('Invidious fetch failed, trying MusicBrainz...');
         }
 
         // === STRATEGY 3: MusicBrainz (backup, rate limited) ===
