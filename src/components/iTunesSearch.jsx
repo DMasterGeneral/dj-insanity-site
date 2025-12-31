@@ -1,5 +1,43 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Search, X, Music2 } from 'lucide-react';
+
+// JSONP helper for iTunes API (required for mobile Safari CORS support)
+let jsonpCounter = 0;
+const jsonp = (url) => {
+    return new Promise((resolve, reject) => {
+        const callbackName = `itunes_callback_${++jsonpCounter}`;
+        const script = document.createElement('script');
+
+        // Cleanup function
+        const cleanup = () => {
+            delete window[callbackName];
+            script.remove();
+        };
+
+        // Set timeout for request
+        const timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error('Request timeout'));
+        }, 10000);
+
+        // Define callback
+        window[callbackName] = (data) => {
+            clearTimeout(timeout);
+            cleanup();
+            resolve(data);
+        };
+
+        // Add callback to URL and execute
+        script.src = `${url}&callback=${callbackName}`;
+        script.onerror = () => {
+            clearTimeout(timeout);
+            cleanup();
+            reject(new Error('Script load error'));
+        };
+
+        document.head.appendChild(script);
+    });
+};
 
 export default function iTunesSearch({ onSelectSong }) {
     const [query, setQuery] = useState('');
@@ -7,23 +45,23 @@ export default function iTunesSearch({ onSelectSong }) {
     const [loading, setLoading] = useState(false);
     const [searched, setSearched] = useState(false);
 
-    const searchSongs = async () => {
+    const searchSongs = useCallback(async () => {
         if (!query.trim()) return;
 
         setLoading(true);
         setSearched(true);
         try {
-            const response = await fetch(
+            // Use JSONP for cross-browser/mobile compatibility
+            const data = await jsonp(
                 `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=10`
             );
-            const data = await response.json();
             setResults(data.results || []);
         } catch (error) {
             console.error('Search error:', error);
             setResults([]);
         }
         setLoading(false);
-    };
+    }, [query]);
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter') {
