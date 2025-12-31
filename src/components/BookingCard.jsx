@@ -160,8 +160,10 @@ export default function BookingCard() {
         <div className="relative">
           <input
             type="date"
-            className={`${inputClass('date')} text-white/70 [color-scheme:dark] appearance-none min-h-[48px] ${!formData.date ? 'text-transparent' : ''
-              }`}
+            className={`${inputClass('date')} [color-scheme:dark] appearance-none min-h-[48px]`}
+            style={{
+              color: formData.date ? 'rgba(255,255,255,0.7)' : 'transparent',
+            }}
             value={formData.date}
             onChange={e => {
               setFormData({ ...formData, date: e.target.value });
