@@ -1,0 +1,53 @@
+/* Design C stub (Gig poster). Everything is scoped under .design-c; --ui-* variables theme the shared form. */
+.design-c {
+  --ui-bg: #111111;
+  --ui-surface: #1b1b1b;
+  --ui-text: #ffffff;
+  --ui-muted: #b5b5b5;
+  --ui-accent: #ff3b1f;
+  --ui-accent-text: #111111;
+  --ui-border: #ffffff;
+  --ui-danger: #ffb000;
+  --ui-radius: 0;
+  --ui-focus: #ffe600;
+  min-height: 100vh;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: var(--ui-font);
+  /* Leave room for the floating design switcher (bottom-left) and a sticky Book button. */
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+.design-c__live {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  background: var(--ui-accent);
+  color: var(--ui-accent-text);
+  text-align: center;
+}
+.design-c__live a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}
+.design-c__main {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 2.5rem 1rem 0;
+}
+.design-c h1 {
+  margin: 0 0 2rem;
+  font-size: clamp(1.75rem, 6vw, 2.75rem);
+  font-weight: 800;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+}
+.design-c h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+.design-c__book > p {
+  margin: 0 0 1.5rem;
+  color: var(--ui-muted);
+}
