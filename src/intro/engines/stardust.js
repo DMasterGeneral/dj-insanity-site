@@ -123,8 +123,9 @@ function glowSprite(size, stops) {
  * Cheap bloom: the frame is downsampled through a small mip chain and added back on top.
  * No ctx.filter / shadowBlur, so the cost is a handful of drawImage calls per frame.
  */
-function makeBloom(canvas) {
-  var levels = [], w = canvas.width, h = canvas.height;
+function makeBloom(canvas, dpr) {
+  // above 2x, start the chain smaller so the levels (and so the glow) are the same size as at 2x
+  var k = Math.max(2, dpr) / 2, levels = [], w = canvas.width / k, h = canvas.height / k;
   for (var i = 0; i < 4; i++) {
     w = Math.max(2, Math.ceil(w / 2)); h = Math.max(2, Math.ceil(h / 2));
     var c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -153,9 +154,16 @@ function makeBloom(canvas) {
 }
 
 // ---------------------------------------------------------------- player
-// Slow-device guard: if the first GUARD_FRAMES frames average more than GUARD_MS apart,
+// Resolution: the screen's own pixel density (phones are 3x) while the backing store stays under
+// MAX_PIXELS; never below the screen's density capped at 2x, so large desktop windows keep 2x.
+// Slow-device guard, measured over GUARD_FRAMES frames at a time: first, if frames average more
+// than DPR_MS apart above 2x, drop to 2x; then, if they average more than GUARD_MS apart,
 // draw every other particle for the rest of the run.
-var GUARD_FRAMES = 30, GUARD_MS = 24;
+var MAX_PIXELS = 4.2e6, GUARD_FRAMES = 30, DPR_MS = 20, GUARD_MS = 24;
+function pickDpr(W, H, cap) {
+  var d = window.devicePixelRatio || 1;
+  return Math.max(Math.min(d, 2), Math.min(d, cap, Math.sqrt(MAX_PIXELS / (W * H))));
+}
 
 /**
  * play(container, { onComplete, onError, speed, reducedMotion })
@@ -179,13 +187,14 @@ export function play(container, opts) {
   var reduced = !!opts.reducedMotion;
   var speed = opts.speed > 0 ? +opts.speed : 1;
   var scene = null, raf = 0, t0 = 0, cur = 0, finished = false, destroyed = false, holdTimer = 0;
-  var lite = false, lastNow = 0, frames = 0, frameSum = 0;
+  var lite = false, lastNow = 0, frames = 0, frameSum = 0, dpr = 1, dprCap = 3, guardDone = false;
 
   function resize() {
     var r = container.getBoundingClientRect();
     var W = Math.max(1, Math.round(r.width)), H = Math.max(1, Math.round(r.height));
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);          // cap DPR: phones report 3+
+    dpr = pickDpr(W, H, dprCap);
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    canvas.dataset.dpr = +dpr.toFixed(2);
     scene = setup({ W: W, H: H, dpr: dpr, ctx: ctx, canvas: canvas });
     draw(cur);
   }
@@ -210,10 +219,15 @@ export function play(container, opts) {
   }
   function tick(now) {
     if (destroyed) return;
-    if (frames < GUARD_FRAMES) {
+    if (!guardDone) {
       if (lastNow) { frameSum += now - lastNow; frames++; }
       lastNow = now;
-      if (frames === GUARD_FRAMES && frameSum / GUARD_FRAMES > GUARD_MS) { lite = true; canvas.dataset.particles = 'half'; }
+      if (frames === GUARD_FRAMES) {
+        var avg = frameSum / GUARD_FRAMES;
+        frames = frameSum = lastNow = 0;                            // the next window starts after this frame
+        if (dpr > 2 && avg > DPR_MS) { dprCap = 2; resize(); }
+        else { guardDone = true; if (avg > GUARD_MS) { lite = true; canvas.dataset.particles = 'half'; } }
+      }
     }
     var t = (now - t0) * speed;
     if (t >= DURATION) { finish(); return; }
@@ -421,8 +435,9 @@ function setup(env) {
 
   var PX = new Float32Array(N), PY = new Float32Array(N), QX = new Float32Array(N), QY = new Float32Array(N), PB = new Uint8Array(N), FL = new Uint8Array(N);
   var CNT = new Int32Array(64), POS = new Int32Array(64), ORD = new Int32Array(N);
-  var tip = glowSprite(96, [[0, 'rgba(255,255,255,1)'], [0.12, 'rgba(255,240,205,1)'], [0.3, 'rgba(245,158,11,0.6)'], [0.6, 'rgba(245,158,11,0.14)'], [1, 'rgba(245,158,11,0)']]);
-  var bloom = makeBloom(canvas);
+  // the round pen tip is drawn up to 4 x clamp(R * 0.11, 15, 26) CSS px wide; above 2x make the sprite that big so it is never stretched
+  var tip = glowSprite(dpr > 2 ? Math.ceil(4 * clamp(R * 0.11, 15, 26) * dpr) : 96, [[0, 'rgba(255,255,255,1)'], [0.12, 'rgba(255,240,205,1)'], [0.3, 'rgba(245,158,11,0.6)'], [0.6, 'rgba(245,158,11,0.14)'], [1, 'rgba(245,158,11,0)']]);
+  var bloom = makeBloom(canvas, dpr);
   var COL = [[96, 150, 255], [37, 99, 235], [226, 236, 255], [245, 158, 11], [255, 214, 140], [150, 110, 255]];
   var NA = 4, ALPHA = [0.3, 0.55, 0.8, 1];
 
