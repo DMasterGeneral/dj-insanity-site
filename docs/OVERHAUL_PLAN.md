@@ -1,7 +1,6 @@
 # DJ Insanity site — overhaul architecture and build plan
 
-Written 2026-11-15. Status: **plan approved by the owner; nothing in this document is built yet.**
-The implementing session should work through the phases in section 6 in order, on the `overhaul` branch.
+Written 2026-11-15. Status (2026-11-16): **Phases 0, 1, 2, 4, 5 and 6 are built on the `overhaul` branch; Phase 3 (tips) and parts of Phase 7 wait on the owner.** See section 9 for what was built, what changed from this plan, and what is still open.
 
 Related: `CLAUDE.md` (repo conventions), git tag `v1-original` (the site exactly as it was before this work).
 
@@ -354,3 +353,34 @@ Dependencies: 1 → 2 → 3 → 4 share the data model and should go in order. 5
 - **Pages Functions bindings** (KV) need either `wrangler.toml` or dashboard setup; if neither is available, fall back to Turnstile-only protection and note it.
 - **Stardust on low-end phones** is untested.
 - **Old test documents** in `requests` use the old shape.
+
+---
+
+## 9. Build log (2026-11-16)
+
+Built by Opus "builder" sessions under a manager session, each phase in its own git worktree, then merged into `overhaul` and pushed (preview: https://overhaul.dj-insanity-site.pages.dev). Server code and rules were reviewed by GPT Sol over three rounds (approved).
+
+**Done**
+- Phase 0: lint clean, Vitest + CI, `scripts/visual-check.mjs`, `functions/` scaffold, `firestore.rules` (not yet published), `shared/contracts.js`, lazy routes.
+- Phase 1: `/api/search`, `/api/status`, `POST /api/requests` (no-tip path), `GET /api/requests/:id`, `POST /api/bookings` + Resend/ntfy notify, `scripts/make-admin.mjs`. 31 recorded search fixtures are the acceptance tests.
+- Phase 2: new `/request` page; Classic's booking card posts to `/api/bookings`; the browser no longer writes to Firestore anywhere (`src/lib/firebase.js` deleted).
+- Phase 4: new `/dj` dashboard with a demo source (`/dj?demo=1` off production).
+- Phase 5: Stardust ported to `src/intro/`, once per session, skippable; the old 7.8 s loader is gone.
+- Phase 6: `content/site.js`, shared `BookingForm`, designs A/B/C at `/designs/*` with a switcher; original kept at `/` and `/classic`.
+
+**Changed from the plan**
+- No KV and no `wrangler.toml`: rate limits are Firestore counter docs (`rate/{kind}_{ipHash}_{window}`), so no binding or dashboard setup is needed. `rate/` is covered by the catch-all deny rule.
+- Firestore auth uses the standard service-account → OAuth token exchange (cached), not a self-signed bearer JWT.
+- Search gap-fill (§4.1 step 7) became a "dominant hit" rule: Deezer's first hit goes to row 1 only when its Deezer rank is ≥ 500,000 and ≥ 1.5× the next different song (or iTunes's top row is junk). The plain "insert at row 2" only added covers in the fixtures. Known side effects: "shots" puts Imagine Dragons above LMFAO; "shake it off" puts Taylor's Version first.
+- Intro config lives in `src/intro/config.js`, not `site.js`. Only Stardust is ported; another engine is a mechanical port of the same `play()` shape.
+- Dashboard queries avoid composite indexes (order by `createdAt`, filter status client-side). Old 2025 docs without `createdAt` simply don't appear.
+- Bookings: the server accepts dates from "UTC today minus one day" so US evening visitors are never refused; the browser blocks past dates in the visitor's own time zone.
+
+**Waiting on the owner (section 7)**
+- A **dev Firebase project** (Firestore + email/password auth + service-account key + web config) for end-to-end proof of requests, bookings and the dashboard. Nothing has been written to any Firestore yet.
+- Production: service-account key and other secrets in Cloudflare, publish `firestore.rules`, disable public sign-up, run `make-admin.mjs` for the DJ's account.
+- Resend key (booking emails); optional ntfy topic for push alerts.
+- Stripe test keys → Phase 3 (tips) is not started.
+- Decisions: intro + speed; landing design A/B/C; real content for the `sample`-tagged items.
+
+**Not verified yet**: anything against a real Firestore, Resend, Turnstile with real keys, real phones/Safari, the intro on low-end phones.
