@@ -53,7 +53,7 @@
   padding-inline: 0.5em;
 }
 .ui-button--sm {
-  min-height: 36px;
+  min-height: 44px; /* still a full-size tap target */
   padding: 0.4em 0.85em;
   font-size: 0.875rem;
 }
