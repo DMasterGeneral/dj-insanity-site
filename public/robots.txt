@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /dj
+Disallow: /api/
+Disallow: /intros/
+Disallow: /designs/

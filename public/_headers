@@ -1,0 +1,12 @@
+# Cloudflare Pages response headers for static files. Pages does not apply this file to
+# responses from Pages Functions (/api/*); those set their own headers in code.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  X-Frame-Options: DENY
+
+# Vite's hashed build output (JS, CSS, fonts) never changes at the same URL.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
