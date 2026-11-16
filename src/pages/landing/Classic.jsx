@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Disc } from 'lucide-react';
 
-import WowLoader from '../../components/WowLoader';
 import HeroCard from '../../components/HeroCard';
 import BookingCard from '../../components/BookingCard';
 import GearLocker from '../../components/GearLocker';
@@ -12,13 +11,8 @@ import LiveModeToggle from '../../components/LiveModeToggle';
 
 // Original landing page (v1), kept as-is at / and /classic
 export default function Classic() {
-  const [loading, setLoading] = useState(true);
   const [showTestimonials, setShowTestimonials] = useState(false);
   const navigate = useNavigate();
-
-  if (loading) {
-    return <WowLoader onComplete={() => setLoading(false)} />;
-  }
 
   if (showTestimonials) {
     return <TestimonialsPage onBack={() => setShowTestimonials(false)} />;
