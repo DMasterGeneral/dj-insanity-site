@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { Link2, Music, PenLine, Search, X } from 'lucide-react';
-import { apiGet } from '../../lib/api.js';
+import { searchSongs } from './searchSongs.js';
 import { createLatestOnly, describeTyped, searchErrorMessage, SEARCH_DEBOUNCE_MS, shouldSearch } from './requestLogic.js';
 
 // Search as you type (plan section 4.1, Client). A combobox: the input owns focus, the arrow keys
@@ -66,9 +66,9 @@ export default function SongSearch({ query, onQueryChange, onPick, inputRef }) {
     }
     const timer = setTimeout(() => {
       const call = latest.begin();
-      apiGet(`/api/search?q=${encodeURIComponent(key)}`, { signal: call.signal }).then(
-        (d) => {
-          if (call.isLatest()) setAnswer({ q: key, results: Array.isArray(d.results) ? d.results : [], error: null });
+      searchSongs(key, { signal: call.signal }).then(
+        (results) => {
+          if (call.isLatest()) setAnswer({ q: key, results, error: null });
         },
         (err) => {
           if (!call.isLatest() || call.signal.aborted) return;

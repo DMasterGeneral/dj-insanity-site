@@ -30,7 +30,7 @@ src/
   components/            booking form and the Classic page's cards
   lib/                   API client, Turnstile loader, live-status hook
 shared/contracts.js      request/booking shapes and validation shared by the front end and the API
-functions/api/           status.js, search.js, requests/index.js, requests/[id].js, bookings.js, [[catchall]].js
+functions/api/           status.js, search/deezer.js, requests/index.js, requests/[id].js, bookings.js, [[catchall]].js
 functions/_lib/          firestore.js, guard.js, ratelimit.js, notify.js, settings.js, search/
 scripts/                 visual-check.mjs, make-admin.mjs, record-search-fixtures.mjs, make-share-images.mjs
 tests/                   Vitest tests (functions, shared, request, dj) and recorded search fixtures
@@ -43,7 +43,7 @@ API endpoints (all JSON, same-origin):
 | Endpoint | What it does |
 |---|---|
 | `GET /api/status` | Public settings: live, event name, requests open, tips enabled. Cached 15 s. |
-| `GET /api/search?q=` | Merged Deezer + iTunes song search. |
+| `GET /api/search/deezer?q=` | Deezer's song hits, unmerged (edge-cached 6 h). The request page fetches iTunes itself and merges the two in the browser, because iTunes answers 429 to Cloudflare's shared server IPs. |
 | `POST /api/requests` | Create a song request. |
 | `GET /api/requests/:id` | Status of one request, for the thank-you page. |
 | `POST /api/bookings` | Create a booking and email the DJ. |
