@@ -1,0 +1,46 @@
+{
+ "data": [
+  {
+   "id": 2534222,
+   "readable": true,
+   "title": "Move Bitch",
+   "title_short": "Move Bitch",
+   "title_version": "",
+   "isrc": "USDJ20110894",
+   "link": "https://www.deezer.com/track/2534222",
+   "duration": 270,
+   "rank": 580976,
+   "explicit_lyrics": true,
+   "explicit_content_lyrics": 1,
+   "explicit_content_cover": 1,
+   "preview": "https://cdnt-preview.dzcdn.net/api/1/1/3/b/1/0/3b17308fce06faee44fef54c2467d4b0.mp3?hdnea=exp=1794811791~acl=/api/1/1/3/b/1/0/3b17308fce06faee44fef54c2467d4b0.mp3*~data=user_id=0,application_id=42~hmac=0002aefea549368956d1afef3872c292ebceecf34f73fb2cc30aaeda8c9642e7",
+   "md5_image": "7794446c668eaa094c130be7cbe69502",
+   "artist": {
+    "id": 78,
+    "name": "Ludacris",
+    "link": "https://www.deezer.com/artist/78",
+    "picture": "https://api.deezer.com/artist/78/image",
+    "picture_small": "https://cdn-images.dzcdn.net/images/artist/06bf939a7ae7e65f6ce44c63d2b10213/56x56-000000-80-0-0.jpg",
+    "picture_medium": "https://cdn-images.dzcdn.net/images/artist/06bf939a7ae7e65f6ce44c63d2b10213/250x250-000000-80-0-0.jpg",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/06bf939a7ae7e65f6ce44c63d2b10213/500x500-000000-80-0-0.jpg",
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/06bf939a7ae7e65f6ce44c63d2b10213/1000x1000-000000-80-0-0.jpg",
+    "tracklist": "https://api.deezer.com/artist/78/top?limit=50",
+    "type": "artist"
+   },
+   "album": {
+    "id": 248375,
+    "title": "Word Of Mouf",
+    "cover": "https://api.deezer.com/album/248375/image",
+    "cover_small": "https://cdn-images.dzcdn.net/images/cover/7794446c668eaa094c130be7cbe69502/56x56-000000-80-0-0.jpg",
+    "cover_medium": "https://cdn-images.dzcdn.net/images/cover/7794446c668eaa094c130be7cbe69502/250x250-000000-80-0-0.jpg",
+    "cover_big": "https://cdn-images.dzcdn.net/images/cover/7794446c668eaa094c130be7cbe69502/500x500-000000-80-0-0.jpg",
+    "cover_xl": "https://cdn-images.dzcdn.net/images/cover/7794446c668eaa094c130be7cbe69502/1000x1000-000000-80-0-0.jpg",
+    "md5_image": "7794446c668eaa094c130be7cbe69502",
+    "tracklist": "https://api.deezer.com/album/248375/tracks",
+    "type": "album"
+   },
+   "type": "track"
+  }
+ ],
+ "total": 1
+}

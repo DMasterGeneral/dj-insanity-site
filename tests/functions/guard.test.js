@@ -125,7 +125,7 @@ describe('verifyTurnstile', () => {
 
 describe('api handlers', () => {
   it('GET /api/status returns defaults with a 15 s cache', async () => {
-    const res = status()
+    const res = await status({ request: new Request('https://example.com/api/status'), env: {} })
     expect(res.headers.get('Cache-Control')).toBe('public, max-age=15')
     expect(await res.json()).toEqual({ ok: true, live: false, eventName: null, requestsOpen: false, tipsEnabled: false })
   })

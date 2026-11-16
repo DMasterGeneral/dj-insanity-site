@@ -1,0 +1,87 @@
+{
+ "data": [
+  {
+   "id": 3819491381,
+   "readable": true,
+   "title": "I Wanna Fuck You",
+   "title_short": "I Wanna Fuck You",
+   "title_version": "",
+   "isrc": "CH7812660898",
+   "link": "https://www.deezer.com/track/3819491381",
+   "duration": 182,
+   "rank": 174504,
+   "explicit_lyrics": true,
+   "explicit_content_lyrics": 1,
+   "explicit_content_cover": 2,
+   "preview": "https://cdnt-preview.dzcdn.net/api/1/1/b/4/f/0/b4f320ab47b68fd4518d9e57cf0c7ab0.mp3?hdnea=exp=1794811794~acl=/api/1/1/b/4/f/0/b4f320ab47b68fd4518d9e57cf0c7ab0.mp3*~data=user_id=0,application_id=42~hmac=1aa4d29b435ac2d694037ab3c9124c81cc9f5b33905a25b2dacd150746b140ca",
+   "md5_image": "6e33a42b26faf6f127b8fb9ac429234d",
+   "artist": {
+    "id": 330512,
+    "name": "DJ Drama",
+    "link": "https://www.deezer.com/artist/330512",
+    "picture": "https://api.deezer.com/artist/330512/image",
+    "picture_small": "https://cdn-images.dzcdn.net/images/artist/b725daf5fbc2ed27938077245229007e/56x56-000000-80-0-0.jpg",
+    "picture_medium": "https://cdn-images.dzcdn.net/images/artist/b725daf5fbc2ed27938077245229007e/250x250-000000-80-0-0.jpg",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/b725daf5fbc2ed27938077245229007e/500x500-000000-80-0-0.jpg",
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/b725daf5fbc2ed27938077245229007e/1000x1000-000000-80-0-0.jpg",
+    "tracklist": "https://api.deezer.com/artist/330512/top?limit=50",
+    "type": "artist"
+   },
+   "album": {
+    "id": 910739521,
+    "title": "Gangsta Grillz: From The Bottom To The Top",
+    "cover": "https://api.deezer.com/album/910739521/image",
+    "cover_small": "https://cdn-images.dzcdn.net/images/cover/6e33a42b26faf6f127b8fb9ac429234d/56x56-000000-80-0-0.jpg",
+    "cover_medium": "https://cdn-images.dzcdn.net/images/cover/6e33a42b26faf6f127b8fb9ac429234d/250x250-000000-80-0-0.jpg",
+    "cover_big": "https://cdn-images.dzcdn.net/images/cover/6e33a42b26faf6f127b8fb9ac429234d/500x500-000000-80-0-0.jpg",
+    "cover_xl": "https://cdn-images.dzcdn.net/images/cover/6e33a42b26faf6f127b8fb9ac429234d/1000x1000-000000-80-0-0.jpg",
+    "md5_image": "6e33a42b26faf6f127b8fb9ac429234d",
+    "tracklist": "https://api.deezer.com/album/910739521/tracks",
+    "type": "album"
+   },
+   "type": "track"
+  },
+  {
+   "id": 2275423587,
+   "readable": true,
+   "title": "i wanna fuck you akon rmxx",
+   "title_short": "i wanna fuck you akon rmxx",
+   "title_version": "",
+   "isrc": "QZK6N2346798",
+   "link": "https://www.deezer.com/track/2275423587",
+   "duration": 124,
+   "rank": 5490,
+   "explicit_lyrics": true,
+   "explicit_content_lyrics": 1,
+   "explicit_content_cover": 2,
+   "preview": "https://cdnt-preview.dzcdn.net/api/1/1/3/0/6/0/30679b6f074164b3879541d95961a7b3.mp3?hdnea=exp=1794811794~acl=/api/1/1/3/0/6/0/30679b6f074164b3879541d95961a7b3.mp3*~data=user_id=0,application_id=42~hmac=a05e30647e302e1d3627a444f7b85056cddc94aa84488552ad7cf1d158dae5bb",
+   "md5_image": "9fe42f5abb786a056392e1d5b30b86bb",
+   "artist": {
+    "id": 12357238,
+    "name": "MC F",
+    "link": "https://www.deezer.com/artist/12357238",
+    "picture": "https://api.deezer.com/artist/12357238/image",
+    "picture_small": "https://cdn-images.dzcdn.net/images/artist/3cb194d740945067e7509a2ad9f81bdf/56x56-000000-80-0-0.jpg",
+    "picture_medium": "https://cdn-images.dzcdn.net/images/artist/3cb194d740945067e7509a2ad9f81bdf/250x250-000000-80-0-0.jpg",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/3cb194d740945067e7509a2ad9f81bdf/500x500-000000-80-0-0.jpg",
+    "picture_xl": "https://cdn-images.dzcdn.net/images/artist/3cb194d740945067e7509a2ad9f81bdf/1000x1000-000000-80-0-0.jpg",
+    "tracklist": "https://api.deezer.com/artist/12357238/top?limit=50",
+    "type": "artist"
+   },
+   "album": {
+    "id": 439162367,
+    "title": "firelink shrine ep",
+    "cover": "https://api.deezer.com/album/439162367/image",
+    "cover_small": "https://cdn-images.dzcdn.net/images/cover/9fe42f5abb786a056392e1d5b30b86bb/56x56-000000-80-0-0.jpg",
+    "cover_medium": "https://cdn-images.dzcdn.net/images/cover/9fe42f5abb786a056392e1d5b30b86bb/250x250-000000-80-0-0.jpg",
+    "cover_big": "https://cdn-images.dzcdn.net/images/cover/9fe42f5abb786a056392e1d5b30b86bb/500x500-000000-80-0-0.jpg",
+    "cover_xl": "https://cdn-images.dzcdn.net/images/cover/9fe42f5abb786a056392e1d5b30b86bb/1000x1000-000000-80-0-0.jpg",
+    "md5_image": "9fe42f5abb786a056392e1d5b30b86bb",
+    "tracklist": "https://api.deezer.com/album/439162367/tracks",
+    "type": "album"
+   },
+   "type": "track"
+  }
+ ],
+ "total": 2
+}
