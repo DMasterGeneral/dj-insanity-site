@@ -11,6 +11,7 @@ import {
 } from '../../shared/contracts.js';
 import { site } from '../content/site.js';
 import { ApiError, apiPost } from '../lib/api.js';
+import { createTurnstile } from '../lib/turnstile.js';
 import Field from './ui/Field.jsx';
 import Button from './ui/Button.jsx';
 import Sample from './Sample.jsx';
@@ -37,10 +38,6 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   return { value, label };
 });
 
-const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
-const TURNSTILE_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-const TOKEN_WAIT_MS = 10000;
-
 /** Today as YYYY-MM-DD in the visitor's own time zone. */
 function localToday() {
   const d = new Date();
@@ -57,27 +54,6 @@ function formatLength(minutes) {
   return parts.join(' ');
 }
 
-/** @type {Promise<any> | null} */
-let turnstileScript = null;
-function loadTurnstile() {
-  turnstileScript ??= new Promise((resolve) => {
-    if (window.turnstile) {
-      resolve(window.turnstile);
-      return;
-    }
-    const s = document.createElement('script');
-    s.src = TURNSTILE_SRC;
-    s.async = true;
-    s.onload = () => resolve(window.turnstile ?? null);
-    s.onerror = () => {
-      turnstileScript = null; // allow a later retry
-      resolve(null);
-    };
-    document.head.appendChild(s);
-  });
-  return turnstileScript;
-}
-
 /**
  * @param {{ idPrefix: string, className?: string, onSuccess?: (data: any) => void }} props
  *   idPrefix: makes every id unique on the page, e.g. "a" → "a-booking-name".
@@ -92,7 +68,7 @@ export default function BookingForm({ idPrefix, className = '', onSuccess }) {
 
   const successRef = useRef(/** @type {HTMLHeadingElement|null} */ (null));
   const turnstileBox = useRef(/** @type {HTMLDivElement|null} */ (null));
-  const turnstile = useRef({ started: false, widgetId: /** @type {string|null} */ (null), token: /** @type {string|null} */ (null), waiters: /** @type {((t: string|null) => void)[]} */ ([]) });
+  const [turnstile] = useState(() => createTurnstile('booking'));
 
   const id = (name) => `${idPrefix}-booking-${name}`;
   const today = localToday();
@@ -104,57 +80,7 @@ export default function BookingForm({ idPrefix, className = '', onSuccess }) {
     if (status === 'done') successRef.current?.focus();
   }, [status]);
 
-  useEffect(() => {
-    const ts = turnstile.current;
-    return () => {
-      if (ts.widgetId !== null) window.turnstile?.remove(ts.widgetId);
-    };
-  }, []);
-
-  // ---- Turnstile (only when a site key is configured) ----------------------------------------
-
-  function startTurnstile() {
-    const ts = turnstile.current;
-    if (!TURNSTILE_SITE_KEY || ts.started) return;
-    ts.started = true;
-    const settle = (token) => {
-      ts.token = token;
-      if (token) ts.waiters.splice(0).forEach((w) => w(token));
-    };
-    loadTurnstile().then((api) => {
-      if (!api || !turnstileBox.current) {
-        ts.started = false;
-        ts.waiters.splice(0).forEach((w) => w(null));
-        return;
-      }
-      ts.widgetId = api.render(turnstileBox.current, {
-        sitekey: TURNSTILE_SITE_KEY,
-        action: 'booking',
-        appearance: 'interaction-only',
-        callback: (token) => settle(token),
-        'expired-callback': () => settle(null),
-        'error-callback': () => settle(null),
-      });
-    });
-  }
-
-  /** @returns {Promise<string|null>} */
-  function getTurnstileToken() {
-    if (!TURNSTILE_SITE_KEY) return Promise.resolve(null);
-    const ts = turnstile.current;
-    startTurnstile();
-    if (ts.token) return Promise.resolve(ts.token);
-    return new Promise((resolve) => {
-      ts.waiters.push(resolve);
-      setTimeout(() => resolve(null), TOKEN_WAIT_MS);
-    });
-  }
-
-  function resetTurnstile() {
-    const ts = turnstile.current;
-    ts.token = null; // tokens are single use
-    if (ts.widgetId !== null) window.turnstile?.reset(ts.widgetId);
-  }
+  useEffect(() => () => turnstile.remove(), [turnstile]);
 
   // ---- Field handlers -------------------------------------------------------------------------
 
@@ -204,7 +130,7 @@ export default function BookingForm({ idPrefix, className = '', onSuccess }) {
     setFailure(null);
     setStatus('sending');
     try {
-      const token = await getTurnstileToken();
+      const token = await turnstile.getToken(turnstileBox.current);
       const data = await apiPost('/api/bookings', token ? { ...values, turnstileToken: token } : { ...values });
       setStatus('done');
       onSuccess?.(data);
@@ -221,7 +147,7 @@ export default function BookingForm({ idPrefix, className = '', onSuccess }) {
         setStatus('failed');
       }
     } finally {
-      resetTurnstile();
+      turnstile.reset();
     }
   }
 
@@ -256,7 +182,7 @@ export default function BookingForm({ idPrefix, className = '', onSuccess }) {
         e.preventDefault();
         submit();
       }}
-      onFocus={startTurnstile}
+      onFocus={() => turnstile.start(turnstileBox.current)}
     >
       <Field {...controlProps('name')} label="Your name" autoComplete="name" maxLength={BOOKING_NAME_MAX} />
 

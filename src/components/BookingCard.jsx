@@ -1,7 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Calendar, Phone, MessageSquare } from 'lucide-react';
 import GlassCard from './GlassCard';
-import { addBooking } from '../lib/firebase';
+import { validateBooking } from '../../shared/contracts.js';
+import { ApiError, apiPost } from '../lib/api.js';
+import { createTurnstile } from '../lib/turnstile.js';
+
+// The original (Classic) quick booking card. Sends to POST /api/bookings with the shared
+// contract's field names (validateBooking); the browser never writes to Firestore.
 
 // Generate time options in 30-minute increments
 const generateTimeOptions = () => {
@@ -30,59 +35,73 @@ const formatPhoneNumber = (value) => {
 
 const timeOptions = generateTimeOptions();
 
+/** Today as YYYY-MM-DD in the visitor's own time zone. */
+const localToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const EMPTY_FORM = {
+  name: '',
+  phone: '',
+  contactPreference: 'text',
+  date: '',
+  startTime: '',
+  endTime: '',
+  eventType: ''
+};
+
+const FieldError = ({ message }) =>
+  message ? <p className="text-sm font-semibold text-red-400 -mt-1">{message}</p> : null;
+
 export default function BookingCard() {
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    contactPreference: 'text',
-    date: '',
-    startTime: '',
-    endTime: '',
-    eventType: ''
-  });
+  const [formData, setFormData] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState({});
+  const [failure, setFailure] = useState(null);
+  const [turnstile] = useState(() => createTurnstile('booking'));
+  const cardRef = useRef(null);
+  const turnstileBox = useRef(null);
+
+  useEffect(() => () => turnstile.remove(), [turnstile]);
+
+  // The request page's "Book" link points here (/#book); the card renders after the page loads.
+  useEffect(() => {
+    if (window.location.hash === '#book') cardRef.current?.scrollIntoView();
+  }, []);
 
   const validate = () => {
-    const newErrors = {};
-    if (!formData.name.trim()) newErrors.name = true;
+    const result = validateBooking(formData, { today: localToday() });
+    const newErrors = result.ok ? {} : { ...result.errors };
 
-    // Check for exactly 10 digits
+    // This card has no email field and takes US numbers only: exactly 10 digits
+    delete newErrors.email;
     const phoneDigits = formData.phone.replace(/\D/g, '');
-    if (phoneDigits.length !== 10) newErrors.phone = true;
+    if (phoneDigits.length !== 10) newErrors.phone = 'Enter a 10-digit phone number.';
 
-    if (!formData.date) newErrors.date = true;
-    if (!formData.startTime) newErrors.startTime = true;
-    if (!formData.endTime) newErrors.endTime = true;
-    if (!formData.eventType) newErrors.eventType = true;
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validate()) return;
+    if (submitting || !validate()) return;
 
     setSubmitting(true);
+    setFailure(null);
     try {
-      await addBooking({
-        ...formData,
-        timeRange: `${formData.startTime} - ${formData.endTime}`
-      });
+      const token = await turnstile.getToken(turnstileBox.current);
+      await apiPost('/api/bookings', token ? { ...formData, turnstileToken: token } : formData);
       setSubmitted(true);
-      setFormData({
-        name: '',
-        phone: '',
-        contactPreference: 'text',
-        date: '',
-        startTime: '',
-        endTime: '',
-        eventType: ''
-      });
+      setFormData(EMPTY_FORM);
       setErrors({});
     } catch (error) {
-      console.error('Booking error:', error);
+      const fields = error instanceof ApiError && error.fields ? error.fields : null;
+      if (fields && Object.keys(EMPTY_FORM).some((f) => fields[f])) setErrors(fields);
+      else setFailure(error instanceof ApiError ? error.message : 'Something went wrong. Please try again.');
+    } finally {
+      turnstile.reset();
     }
     setSubmitting(false);
   };
@@ -115,12 +134,17 @@ export default function BookingCard() {
 
   return (
     <GlassCard className="flex flex-col">
-      <div className="flex items-center gap-2 text-electric mb-4">
+      <div id="book" ref={cardRef} className="flex items-center gap-2 text-electric mb-4 scroll-mt-12">
         <Calendar size={20} />
         <h2 className="font-bold text-lg">Quick Booking</h2>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-3 flex-1 flex flex-col">
+      <form
+        onSubmit={handleSubmit}
+        onFocus={() => turnstile.start(turnstileBox.current)}
+        noValidate
+        className="space-y-3 flex-1 flex flex-col"
+      >
         {/* Name */}
         <input
           type="text"
@@ -132,6 +156,7 @@ export default function BookingCard() {
             if (errors.name) setErrors({ ...errors, name: false });
           }}
         />
+        <FieldError message={errors.name} />
 
         {/* Phone + Contact Preference */}
         <div className="flex gap-2">
@@ -176,10 +201,13 @@ export default function BookingCard() {
           </div>
         </div>
 
+        <FieldError message={errors.phone} />
+
         {/* Date */}
         <div className="relative">
           <input
             type="date"
+            min={localToday()}
             className={`${inputClass('date')} [color-scheme:dark] appearance-none min-h-[48px]`}
             style={{
               color: formData.date ? 'rgba(255,255,255,0.7)' : 'transparent',
@@ -196,6 +224,8 @@ export default function BookingCard() {
             </span>
           )}
         </div>
+
+        <FieldError message={errors.date} />
 
         {/* Time Range */}
         <div className="flex gap-2 items-center">
@@ -236,6 +266,8 @@ export default function BookingCard() {
           </select>
         </div>
 
+        <FieldError message={errors.startTime || errors.endTime} />
+
         {/* Event Type */}
         <select
           className={selectClass('eventType')}
@@ -251,10 +283,10 @@ export default function BookingCard() {
           <option value="wedding" className="bg-midnight">
             Wedding
           </option>
-          <option value="club" className="bg-midnight">
+          <option value="club_bar" className="bg-midnight">
             Club Night
           </option>
-          <option value="private" className="bg-midnight">
+          <option value="private_party" className="bg-midnight">
             Private Party
           </option>
           <option value="corporate" className="bg-midnight">
@@ -264,6 +296,16 @@ export default function BookingCard() {
             Other
           </option>
         </select>
+
+        <FieldError message={errors.eventType} />
+
+        <div ref={turnstileBox} className="empty:hidden" />
+
+        {failure && (
+          <p role="alert" className="rounded-xl border border-red-500/60 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-300">
+            {failure}
+          </p>
+        )}
 
         {/* Submit Button */}
         <button
