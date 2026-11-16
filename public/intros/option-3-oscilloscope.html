@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DJ Insanity intro — Option 3 · Oscilloscope</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #050505; overflow: hidden; }
+  body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+  #stage {
+    position: fixed; inset: 0; cursor: pointer; touch-action: manipulation;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(37, 99, 235, 0.10) 0%, transparent 55%),
+      radial-gradient(ellipse at 80% 100%, rgba(139, 92, 246, 0.08) 0%, transparent 55%),
+      #050505;
+  }
+  #replay {
+    position: fixed; right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); z-index: 2;
+    font: 600 12px/1 inherit; letter-spacing: .14em; text-transform: uppercase;
+    color: rgba(255,255,255,.72); background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.16);
+    padding: 10px 14px; border-radius: 999px; cursor: pointer; opacity: 0; transition: opacity .4s ease, background .2s ease, color .2s ease;
+  }
+  #replay.show { opacity: 1; }
+  #replay:hover, #replay:focus-visible { background: rgba(37,99,235,.28); color: #fff; outline: none; }
+  #replay[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<button id="replay" type="button" hidden>Replay</button>
+<script>
+/*
+ * DJ INSANITY — intro prototype: Option 3 · Oscilloscope
+ * A CRT beam: the spiral is an X-Y trace that turns side-on into a Y-T waveform, then the timebase tightens until its envelope is the title.
+ *
+ * Self-contained: no build step, no network. One time value drives every pixel.
+ *   DJIntro.play(container, { onComplete })  ->  { skip, replay, seek, destroy, duration }
+ * Dev helpers on this page:  ?t=<ms> renders one frozen frame;  ?rm=1 forces the reduced-motion path.
+ */
+var DJIntro = (function () {
+  'use strict';
+  // ---------------------------------------------------------------- utils
+  var TAU = Math.PI * 2;
+  function c01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+  function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  /** progress of t through [a,b], clamped 0..1 */
+  function seg(t, a, b) { return c01((t - a) / (b - a)); }
+  var E = {
+    in2: function (x) { return x * x; },
+    out2: function (x) { return 1 - (1 - x) * (1 - x); },
+    in3: function (x) { return x * x * x; },
+    out3: function (x) { return 1 - Math.pow(1 - x, 3); },
+    inOut3: function (x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; },
+    out5: function (x) { return 1 - Math.pow(1 - x, 5); },
+    inOut5: function (x) { return x < 0.5 ? 16 * x * x * x * x * x : 1 - Math.pow(-2 * x + 2, 5) / 2; },
+    outExpo: function (x) { return x >= 1 ? 1 : 1 - Math.pow(2, -10 * x); },
+    inOutSine: function (x) { return -(Math.cos(Math.PI * x) - 1) / 2; },
+    smooth: function (x) { return x * x * (3 - 2 * x); },
+    outBack: function (x) { var c = 1.35; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); }
+  };
+  /** deterministic PRNG (mulberry32) so every run and every ?t= frame is identical */
+  function rng(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      var t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // ---------------------------------------------------------------- title glyphs
+  // Outlines of "DJ INSANITY" in Inter Black (900), traced once and embedded so the
+  // intro has no font dependency at runtime. Units: 1/4000 em, origin on the baseline, y down.
+  var G = {"unit":4000,"text":"DJ INSANITY","pos":[0,2891,5273,6070,7234,10313,12977,16043,19121,20285,23031],"total":26133,"cap":2910,"glyphs":{"D":[[[183,-2910],[190,-2915],[1390,-2914],[1530,-2903],[1710,-2873],[1820,-2843],[1910,-2812],[1980,-2783],[2060,-2744],[2150,-2692],[2220,-2644],[2310,-2571],[2383,-2500],[2452,-2420],[2524,-2320],[2572,-2240],[2612,-2160],[2653,-2060],[2682,-1970],[2703,-1890],[2717,-1810],[2723,-1790],[2743,-1620],[2748,-1450],[2743,-1290],[2724,-1130],[2704,-1030],[2687,-970],[2683,-950],[2654,-860],[2613,-760],[2586,-710],[2573,-680],[2544,-630],[2462,-510],[2422,-460],[2360,-394],[2300,-337],[2250,-297],[2210,-266],[2120,-208],[2070,-179],[1960,-127],[1910,-107],[1820,-76],[1710,-47],[1610,-28],[1510,-16],[1310,-5],[190,-5],[183,-10]],[[975,-2240],[980,-2243],[1250,-2243],[1390,-2234],[1470,-2223],[1550,-2204],[1610,-2184],[1640,-2173],[1710,-2133],[1770,-2083],[1824,-2020],[1854,-1970],[1884,-1910],[1903,-1860],[1924,-1790],[1943,-1680],[1953,-1580],[1955,-1460],[1953,-1340],[1944,-1240],[1933,-1170],[1912,-1080],[1892,-1020],[1874,-980],[1834,-910],[1803,-870],[1767,-830],[1740,-807],[1700,-777],[1650,-749],[1570,-717],[1530,-707],[1480,-695],[1370,-680],[1270,-677],[980,-677],[975,-680],[972,-690],[972,-2230]]],"J":[[[1414,-2910],[1420,-2915],[2180,-2915],[2191,-2910],[2190,-920],[2183,-780],[2173,-700],[2167,-680],[2154,-610],[2124,-520],[2085,-430],[2044,-360],[1983,-280],[1920,-215],[1850,-157],[1770,-106],[1690,-66],[1590,-28],[1510,-6],[1370,21],[1240,32],[1140,35],[1030,31],[940,23],[870,13],[760,-7],[690,-26],[580,-67],[500,-106],[420,-157],[354,-210],[290,-273],[227,-350],[180,-430],[147,-500],[116,-590],[96,-670],[87,-720],[76,-810],[74,-1090],[80,-1097],[850,-1097],[860,-1094],[863,-1090],[863,-900],[866,-830],[877,-770],[887,-740],[906,-700],[935,-660],[970,-628],[1030,-595],[1070,-586],[1140,-580],[1200,-585],[1250,-596],[1270,-606],[1308,-630],[1343,-660],[1371,-700],[1393,-750],[1404,-800],[1414,-900]]],"I":[[[183,-2910],[190,-2915],[960,-2915],[972,-2910],[972,-10],[970,-8],[960,-5],[190,-5],[183,-10]]],"N":[[[183,-2910],[190,-2915],[1030,-2915],[1040,-2915],[1045,-2910],[1456,-2230],[1483,-2190],[1487,-2180],[1513,-2140],[1517,-2130],[1544,-2090],[1657,-1900],[1713,-1810],[1814,-1640],[1901,-1480],[1985,-1310],[2062,-1130],[2110,-1004],[2115,-1010],[2116,-1020],[2114,-1070],[2097,-1300],[2075,-1700],[2074,-2910],[2080,-2915],[2880,-2915],[2885,-2910],[2885,-10],[2880,-5],[2030,-5],[2024,-10],[1377,-1070],[1267,-1260],[1196,-1390],[1105,-1570],[1026,-1740],[960,-1892],[956,-1890],[953,-1880],[956,-1820],[973,-1590],[994,-1190],[995,-10],[990,-5],[190,-5],[183,-10]]],"S":[[[1245,-2950],[1360,-2955],[1460,-2953],[1580,-2942],[1750,-2913],[1850,-2884],[1910,-2862],[2030,-2805],[2100,-2764],[2170,-2714],[2250,-2645],[2292,-2600],[2362,-2510],[2393,-2460],[2414,-2420],[2453,-2330],[2472,-2270],[2494,-2170],[2505,-2070],[2506,-2010],[2500,-2005],[1760,-2005],[1750,-2007],[1747,-2010],[1743,-2050],[1733,-2090],[1714,-2140],[1681,-2190],[1650,-2222],[1600,-2254],[1560,-2273],[1530,-2284],[1440,-2301],[1360,-2305],[1300,-2303],[1210,-2292],[1150,-2274],[1120,-2261],[1090,-2242],[1070,-2226],[1039,-2190],[1018,-2150],[1008,-2110],[1006,-2080],[1009,-2050],[1016,-2020],[1028,-1990],[1048,-1960],[1080,-1928],[1110,-1906],[1160,-1879],[1190,-1866],[1270,-1838],[1340,-1817],[1650,-1752],[1770,-1724],[1870,-1693],[1950,-1663],[2020,-1633],[2120,-1583],[2200,-1534],[2280,-1473],[2330,-1426],[2364,-1390],[2382,-1370],[2432,-1300],[2465,-1240],[2494,-1170],[2514,-1110],[2524,-1070],[2534,-1020],[2537,-980],[2543,-950],[2545,-860],[2543,-780],[2533,-700],[2523,-650],[2505,-580],[2494,-550],[2464,-480],[2433,-420],[2413,-390],[2384,-350],[2342,-300],[2300,-258],[2240,-207],[2150,-147],[2050,-95],[2010,-77],[1980,-66],[1860,-26],[1740,-2],[1720,3],[1550,25],[1370,30],[1190,24],[1080,14],[1010,3],[840,-36],[720,-76],[630,-116],[570,-147],[520,-179],[440,-238],[350,-324],[318,-360],[287,-400],[228,-490],[187,-580],[168,-630],[147,-700],[128,-790],[116,-870],[108,-1020],[120,-1027],[850,-1027],[858,-1020],[866,-960],[877,-910],[887,-880],[916,-820],[936,-790],[962,-760],[993,-730],[1020,-708],[1090,-666],[1140,-648],[1220,-628],[1290,-620],[1360,-617],[1410,-620],[1470,-627],[1560,-647],[1610,-669],[1640,-686],[1680,-718],[1713,-760],[1723,-780],[1734,-810],[1741,-860],[1733,-920],[1714,-960],[1681,-1000],[1640,-1032],[1600,-1055],[1560,-1074],[1440,-1113],[1270,-1153],[960,-1218],[820,-1258],[740,-1286],[670,-1316],[590,-1356],[480,-1426],[402,-1490],[360,-1531],[327,-1570],[297,-1610],[266,-1660],[263,-1670],[238,-1720],[217,-1780],[197,-1860],[185,-1950],[183,-2030],[185,-2100],[197,-2200],[216,-2280],[237,-2340],[268,-2410],[296,-2460],[336,-2520],[377,-2570],[420,-2616],[480,-2673],[560,-2734],[640,-2784],[760,-2843],[860,-2883],[1020,-2924],[1160,-2944]]],"A":[[[1026,-2910],[1030,-2914],[1040,-2915],[2100,-2915],[2107,-2910],[3084,-10],[3080,-6],[2200,-5],[2190,-8],[2034,-530],[2023,-560],[2020,-563],[2010,-563],[1130,-563],[1127,-560],[1117,-530],[973,-20],[968,-10],[960,-5],[100,-5],[90,-6],[86,-10]],[[1560,-2260],[1564,-2250],[1574,-2210],[1646,-1900],[1746,-1510],[1843,-1170],[1845,-1160],[1840,-1153],[1310,-1153],[1300,-1154],[1296,-1160],[1342,-1320],[1393,-1520],[1463,-1820],[1547,-2220]]],"T":[[[105,-2910],[110,-2915],[2620,-2915],[2633,-2910],[2633,-2290],[2630,-2280],[2620,-2277],[1770,-2277],[1763,-2270],[1763,-10],[1760,-7],[980,-5],[974,-10],[974,-2270],[970,-2275],[960,-2277],[110,-2277],[106,-2280],[105,-2290]]],"Y":[[[87,-2910],[90,-2913],[100,-2915],[1010,-2915],[1015,-2910],[1054,-2830],[1444,-2010],[1492,-1900],[1534,-1790],[1557,-1720],[1560,-1713],[1570,-1710],[1597,-1800],[1613,-1840],[1637,-1910],[1666,-1980],[2081,-2910],[2090,-2915],[2990,-2915],[3000,-2914],[3004,-2910],[1955,-1020],[1954,-10],[1950,-6],[1180,-5],[1168,-10],[1168,-1010],[1166,-1020],[403,-2360],[287,-2560],[283,-2570],[167,-2770],[163,-2780]]]}};
+
+  /** Lay the title out centred on (cx, cy), no wider than maxW and no taller than maxFont px. */
+  function layoutTitle(maxW, maxFont, cx, cy, tracking) {
+    var U = G.unit, n = G.text.length, i, j;
+    var emW = G.total / U + tracking * (n - 1);
+    var font = Math.min(maxFont, maxW / emW);
+    var width = emW * font, x0 = cx - width / 2, cap = G.cap / U * font, base = cy + cap / 2;
+    var glyphs = [];
+    for (i = 0; i < n; i++) {
+      var ch = G.text[i];
+      if (ch === ' ') continue;
+      var gx = x0 + (G.pos[i] / U + tracking * i) * font;
+      var minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
+      var contours = G.glyphs[ch].map(function (c) {
+        var a = new Float32Array(c.length * 2);
+        for (j = 0; j < c.length; j++) {
+          var x = gx + c[j][0] / U * font, y = base + c[j][1] / U * font;
+          a[2 * j] = x; a[2 * j + 1] = y;
+          if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y;
+        }
+        return a;
+      });
+      // biggest contour first (outer), counters after
+      contours.sort(function (a, b) { return Math.abs(polyArea(b)) - Math.abs(polyArea(a)); });
+      glyphs.push({ ch: ch, index: i, contours: contours, x0: minx, x1: maxx, y0: miny, y1: maxy });
+    }
+    return {
+      font: font, width: width, x0: x0, base: base, cap: cap, glyphs: glyphs,
+      left: glyphs[0].x0, right: glyphs[glyphs.length - 1].x1, top: base - cap, bottom: base
+    };
+  }
+  function polyArea(a) {
+    var s = 0, n = a.length / 2;
+    for (var i = 0; i < n; i++) { var j = (i + 1) % n; s += a[2 * i] * a[2 * j + 1] - a[2 * j] * a[2 * i + 1]; }
+    return s / 2;
+  }
+  /** Path2D of the solid title (fill with 'evenodd'). `from`/`to` restrict to glyph indices. */
+  function titlePath(title, from, to) {
+    var p = new Path2D();
+    title.glyphs.forEach(function (g, gi) {
+      if (from != null && (gi < from || gi >= to)) return;
+      g.contours.forEach(function (c) {
+        p.moveTo(c[0], c[1]);
+        for (var i = 2; i < c.length; i += 2) p.lineTo(c[i], c[i + 1]);
+        p.closePath();
+      });
+    });
+    return p;
+  }
+  /** For a vertical line at x: sorted list of [yTop, yBottom] spans inside the title's ink. */
+  function titleSpans(title, x) {
+    var ys = [];
+    for (var gi = 0; gi < title.glyphs.length; gi++) {
+      var g = title.glyphs[gi];
+      if (x < g.x0 || x > g.x1) continue;
+      for (var ci = 0; ci < g.contours.length; ci++) {
+        var c = g.contours[ci], n = c.length / 2;
+        for (var i = 0; i < n; i++) {
+          var j = (i + 1) % n, xa = c[2 * i], xb = c[2 * j];
+          if ((xa <= x && xb > x) || (xb <= x && xa > x)) {
+            ys.push(c[2 * i + 1] + (x - xa) / (xb - xa) * (c[2 * j + 1] - c[2 * i + 1]));
+          }
+        }
+      }
+    }
+    ys.sort(function (a, b) { return a - b; });
+    var spans = [];
+    for (var k = 0; k + 1 < ys.length; k += 2) if (ys[k + 1] - ys[k] > 0.3) spans.push([ys[k], ys[k + 1]]);
+    return spans;
+  }
+
+  // ---------------------------------------------------------------- shared drawing helpers
+  /** Soft round sprite (pen tip, particles) pre-rendered once; draw with drawImage. */
+  function glowSprite(size, stops) {
+    var c = document.createElement('canvas'); c.width = c.height = size;
+    var g = c.getContext('2d'), r = size / 2, gr = g.createRadialGradient(r, r, 0, r, r, r);
+    for (var i = 0; i < stops.length; i++) gr.addColorStop(stops[i][0], stops[i][1]);
+    g.fillStyle = gr; g.fillRect(0, 0, size, size);
+    return c;
+  }
+  /**
+   * Cheap bloom: the frame is downsampled through a small mip chain and added back on top.
+   * No ctx.filter / shadowBlur, so the cost is a handful of drawImage calls per frame.
+   */
+  function makeBloom(canvas) {
+    var levels = [], w = canvas.width, h = canvas.height;
+    for (var i = 0; i < 4; i++) {
+      w = Math.max(2, Math.ceil(w / 2)); h = Math.max(2, Math.ceil(h / 2));
+      var c = document.createElement('canvas'); c.width = w; c.height = h;
+      levels.push({ c: c, g: c.getContext('2d') });
+    }
+    return function (ctx, a1, a2, a3) {
+      var src = canvas;
+      for (var i = 0; i < levels.length; i++) {
+        var L = levels[i];
+        L.g.clearRect(0, 0, L.c.width, L.c.height);
+        L.g.drawImage(src, 0, 0, L.c.width, L.c.height);
+        src = L.c;
+      }
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.imageSmoothingEnabled = true;
+      var al = [0, a1, a2, a3 == null ? a2 : a3];
+      for (i = 1; i < levels.length; i++) {
+        if (al[i] <= 0) continue;
+        ctx.globalAlpha = al[i];
+        ctx.drawImage(levels[i].c, 0, 0, canvas.width, canvas.height);
+      }
+      ctx.restore();
+    };
+  }
+
+  // ---------------------------------------------------------------- player
+  /**
+   * play(container, { onComplete, at, reducedMotion })
+   *   container      element that the intro fills (position it yourself; the canvas is absolutely placed inside)
+   *   onComplete     called once when the timeline ends or the visitor skips
+   *   at             optional ms: render that single frame and do not animate (scrubbing / tests)
+   *   reducedMotion  override for prefers-reduced-motion
+   * Returns { skip, replay, seek, destroy, duration }.
+   * Everything on screen is a pure function of one time value, so React can drive it the same way.
+   */
+  function play(container, opts) {
+    opts = opts || {};
+    var canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block';
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', 'DJ INSANITY');
+    container.appendChild(canvas);
+    var ctx = canvas.getContext('2d');
+    var reduced = opts.reducedMotion != null ? opts.reducedMotion
+      : (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    var frozen = opts.at != null;
+    var speed = opts.speed > 0 ? +opts.speed : 1;                  // 1 = designed pace, 0.5 = half speed
+    var scene = null, raf = 0, t0 = 0, cur = frozen ? +opts.at : 0, finished = false, destroyed = false, fadeTimer = 0;
+
+    function resize() {
+      var r = container.getBoundingClientRect();
+      var W = Math.max(1, Math.round(r.width)), H = Math.max(1, Math.round(r.height));
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);          // cap DPR: phones report 3+
+      canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+      scene = setup({ W: W, H: H, dpr: dpr, ctx: ctx, canvas: canvas });
+      draw(cur);
+    }
+    function draw(t) {
+      cur = t;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      scene.render(clamp(t, 0, DURATION));
+    }
+    function finish() {
+      if (finished) return;
+      finished = true;
+      cancelAnimationFrame(raf); raf = 0;
+      draw(DURATION);
+      if (opts.onComplete) opts.onComplete();
+    }
+    function tick(now) {
+      if (destroyed) return;
+      var t = (now - t0) * speed;
+      if (t >= DURATION) { finish(); return; }
+      draw(t);
+      raf = requestAnimationFrame(tick);
+    }
+    function start() {
+      finished = false;
+      cancelAnimationFrame(raf); clearTimeout(fadeTimer);
+      if (frozen) { draw(cur); return; }
+      if (reduced) {                                              // no motion: a short fade to the title
+        canvas.style.transition = 'none'; canvas.style.opacity = '0';
+        draw(DURATION);
+        void canvas.offsetWidth;
+        canvas.style.transition = 'opacity 600ms ease-out'; canvas.style.opacity = '1';
+        fadeTimer = setTimeout(finish, 900);
+        return;
+      }
+      t0 = performance.now();
+      raf = requestAnimationFrame(tick);
+    }
+    function onSkip(e) {
+      if (finished || frozen) return;
+      if (e && e.type === 'keydown' && (e.metaKey || e.ctrlKey || e.altKey)) return;
+      clearTimeout(fadeTimer); canvas.style.transition = 'none'; canvas.style.opacity = '1';
+      finish();
+    }
+    container.addEventListener('pointerdown', onSkip);
+    window.addEventListener('keydown', onSkip);
+    window.addEventListener('resize', resize);
+    resize();
+    start();
+    return {
+      duration: DURATION,
+      skip: onSkip,
+      replay: function (s) { if (s > 0) speed = +s; frozen = false; start(); },
+      seek: function (ms) { frozen = true; cancelAnimationFrame(raf); draw(ms); },
+      destroy: function () {
+        destroyed = true; cancelAnimationFrame(raf); clearTimeout(fadeTimer);
+        container.removeEventListener('pointerdown', onSkip);
+        window.removeEventListener('keydown', onSkip);
+        window.removeEventListener('resize', resize);
+        if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+      }
+    };
+  }
+
+
+
+  // ---------------------------------------------------------------- line geometry shared by the line-based options
+  /**
+   * The record as ONE line: a spiral whose pitch changes to make the spindle, the label ring,
+   * three bands of grooves with gaps between tracks, and a closed outer rim.
+   * Returned points are evenly spaced along the line, centred on 0,0, radius 1, and the line
+   * ends at twelve o'clock travelling to the right (clockwise on screen).
+   */
+  function buildSpiral(N, sections) {
+    var M = 30000, turns = 0, i, s;
+    for (i = 0; i < sections.length; i++) turns += sections[i][0];
+    var fx = new Float64Array(M + 1), fy = new Float64Array(M + 1), fr = new Float64Array(M + 1), cum = new Float64Array(M + 1);
+    var total = turns * TAU;
+    for (i = 0; i <= M; i++) {
+      var th = total * i / M, tt = th / TAU, r0 = 0, r = 0;
+      for (s = 0; s < sections.length; s++) {
+        var sec = sections[s];
+        if (tt <= sec[0] || s === sections.length - 1) {
+          var f = c01(tt / sec[0]);
+          r = lerp(r0, sec[1], sec[2] ? E.smooth(f) : f);
+          break;
+        }
+        tt -= sec[0]; r0 = sec[1];
+      }
+      var a = th - total - Math.PI / 2;
+      fx[i] = r * Math.cos(a); fy[i] = r * Math.sin(a); fr[i] = r;
+      if (i) cum[i] = cum[i - 1] + Math.hypot(fx[i] - fx[i - 1], fy[i] - fy[i - 1]);
+    }
+    var L = cum[M], x = new Float32Array(N), y = new Float32Array(N), rad = new Float32Array(N), ang = new Float32Array(N), j = 0;
+    for (i = 0; i < N; i++) {
+      var d = L * i / (N - 1);
+      while (j < M - 1 && cum[j + 1] < d) j++;
+      var u = (d - cum[j]) / Math.max(1e-9, cum[j + 1] - cum[j]);
+      x[i] = lerp(fx[j], fx[j + 1], u); y[i] = lerp(fy[j], fy[j + 1], u); rad[i] = lerp(fr[j], fr[j + 1], u);
+      ang[i] = total * (j + u) / M;
+    }
+    return { x: x, y: y, r: rad, th: ang, length: L, turns: turns };
+  }
+
+  /** Resample a polyline (flat [x0,y0,x1,y1,...]) to N points evenly spaced along its length. */
+  function resample(flat, N) {
+    var M = flat.length / 2, cum = new Float64Array(M), i;
+    for (i = 1; i < M; i++) cum[i] = cum[i - 1] + Math.hypot(flat[2 * i] - flat[2 * i - 2], flat[2 * i + 1] - flat[2 * i - 1]);
+    var L = cum[M - 1], x = new Float32Array(N), y = new Float32Array(N), src = new Float32Array(N), j = 0;
+    for (i = 0; i < N; i++) {
+      var d = L * i / (N - 1);
+      while (j < M - 2 && cum[j + 1] < d) j++;
+      var u = c01((d - cum[j]) / Math.max(1e-9, cum[j + 1] - cum[j]));
+      x[i] = lerp(flat[2 * j], flat[2 * j + 2], u); y[i] = lerp(flat[2 * j + 1], flat[2 * j + 3], u); src[i] = j + u;
+    }
+    return { x: x, y: y, src: src, length: L, cum: cum };
+  }
+
+  /**
+   * The title as ONE line: it runs along the baseline, and at each letter climbs round the
+   * whole outline (ducking in and out of the counters of D and A) before carrying on.
+   * kind: 0 = baseline rail, 1 = letter outline, 2 = bridge into a counter.
+   */
+  function oneLineTitle(title, margin) {
+    var pts = [], kind = [], marks = [];
+    function push(x, y, k) { pts.push(x, y); kind.push(k); }
+    push(title.left - margin, title.base, 0);
+    title.glyphs.forEach(function (g) {
+      var outer = g.contours[0], n = outer.length / 2, i, k;
+      var step = polyArea(outer) > 0 ? 1 : -1;                    // clockwise on screen
+      var maxy = -1e9; for (i = 0; i < n; i++) maxy = Math.max(maxy, outer[2 * i + 1]);
+      var ei = 0, bx = 1e9;
+      for (i = 0; i < n; i++) if (outer[2 * i + 1] > maxy - 0.02 * title.font && outer[2 * i] < bx) { bx = outer[2 * i]; ei = i; }
+      var bridges = {};
+      for (k = 1; k < g.contours.length; k++) {
+        var inner = g.contours[k], m = inner.length / 2, best = 1e18, bo = 0, bi = 0;
+        for (i = 0; i < n; i++) for (var j = 0; j < m; j++) {
+          var d = Math.pow(outer[2 * i] - inner[2 * j], 2) + Math.pow(outer[2 * i + 1] - inner[2 * j + 1], 2);
+          if (d < best) { best = d; bo = i; bi = j; }
+        }
+        bridges[bo] = { c: inner, at: bi };
+      }
+      var start = pts.length / 2;
+      for (i = 0; i <= n; i++) {
+        var vi = ((ei + step * i) % n + n) % n;
+        push(outer[2 * vi], outer[2 * vi + 1], i === 0 ? 0 : 1);
+        if (i < n && bridges[vi]) {
+          var br = bridges[vi], mm = br.c.length / 2;
+          for (var q = 0; q <= mm; q++) { var wi = (br.at + q) % mm; push(br.c[2 * wi], br.c[2 * wi + 1], q === 0 ? 2 : 1); }
+          push(outer[2 * vi], outer[2 * vi + 1], 2);
+        }
+      }
+      marks.push({ a: start, b: pts.length / 2 - 1, g: g });
+    });
+    push(title.right + margin, title.base, 0);
+    return { pts: pts, kind: kind, marks: marks };
+  }
+
+  /** Pen speed while the record is drawn: slow at the centre, flat out through the grooves, easing onto the rim. Maps time 0..1 to length 0..1. */
+  function penCurve() {
+    var LUT = new Float32Array(257), acc = 0, i;
+    for (i = 1; i <= 256; i++) {
+      var q = i / 256, v = q < 0.7 ? 0.02 + q * q : (0.02 + 0.49) * lerp(1, 0.1, E.smooth((q - 0.7) / 0.3));
+      acc += v; LUT[i] = acc;
+    }
+    return function (q) { var f = c01(q) * 256, k = Math.min(255, f | 0); return lerp(LUT[k], LUT[k + 1], f - k) / acc; };
+  }
+  var RECORD = [[0.5, 0.05, 1], [1, 0.05], [0.8, 0.31, 1], [1, 0.31], [0.5, 0.41, 1],
+    [5, 0.565], [0.4, 0.61, 1], [5, 0.765], [0.4, 0.81, 1], [5, 0.965], [0.4, 1, 1], [1, 1]];
+
+  // ================================================================ OPTION 3 — OSCILLOSCOPE
+  var NAME = 'Oscilloscope';
+  // 125 BPM grid, one beat = 480 ms.
+  var T_DRAW = 240,     // beam starts to move
+      T_DRAWN = 1440,   // record traced (beat 3)
+      T_TURN = 1920,    // X-Y trace starts turning side-on (beat 4)
+      T_WAVE = 2760,    // fully side-on: a Y-T waveform
+      T_ZOOM = 3300,    // timebase starts tightening, envelope starts becoming letters
+      T_TITLE = 4080,   // envelope is the title
+      T_SOLID = 4320,   // letters filled (beat 9)
+      DURATION = 5280;
+
+  function setup(env) {
+    var W = env.W, H = env.H, dpr = env.dpr, ctx = env.ctx, canvas = env.canvas;
+    var cx = W / 2, cy = H * 0.5;
+    var R = Math.min(W * 0.37, H * 0.3, 250);
+    var title = layoutTitle(Math.min(W * 0.84, 1040), 150, cx, cy, 0.035);
+    var fill = titlePath(title);
+    var N = 3000, i;
+    var lw = clamp(R / 110, 1.2, 2.1);
+    var sp = buildSpiral(N, RECORD), pen = penCurve();
+    var TOTAL = sp.turns * TAU;
+
+    var margin = title.font * 0.18;
+    var xL = title.left - margin, xR = title.right + margin, Ww = xR - xL;
+    var A0 = Math.min(H * 0.14, R * 0.8);
+    // per-point constants: trace angle, radius, and "time" (z) — in X-Y mode time runs into the screen
+    var ang = new Float32Array(N), zz = new Float32Array(N);
+    for (i = 0; i < N; i++) { ang[i] = sp.th[i] - TOTAL - Math.PI / 2; zz[i] = (sp.th[i] / TOTAL - 0.5) * Ww; }
+
+    // ink spans of the title for every pixel column: [yTop, yBottom] pairs
+    var COLS = Math.max(2, Math.round(Ww)), spans = new Array(COLS);
+    for (i = 0; i < COLS; i++) spans[i] = titleSpans(title, xL + (i + 0.5) * Ww / COLS);
+    var pitch = clamp(title.font / 30, 2.5, 4);                     // final hatch spacing in px
+    var C_END = Ww / (2 * pitch);
+
+    function envWave(v, t) {
+      var taper = Math.pow(Math.max(0, Math.sin(Math.PI * c01(v))), 0.6);
+      var b = 0.5 + 0.5 * Math.sin(TAU * 2.2 * v - t * 0.0062);
+      return taper * (0.22 + 0.78 * Math.pow(b, 1.6));
+    }
+    function spin(t) { return TAU * 1.05 * t / 1000; }               // one phase drives both the platter and the wave
+
+    var HMAX = 3200, hx = new Float32Array(HMAX), hy = new Float32Array(HMAX), hf = new Float32Array(HMAX), hc = new Int32Array(HMAX), hs = new Int32Array(HMAX);
+    var X = new Float32Array(N), Y = new Float32Array(N), Br = new Float32Array(N), Q = new Uint8Array(N);
+    var tip = glowSprite(96, [[0, 'rgba(255,255,255,1)'], [0.14, 'rgba(225,238,255,1)'], [0.34, 'rgba(96,150,255,0.6)'], [0.65, 'rgba(37,99,235,0.14)'], [1, 'rgba(37,99,235,0)']]);
+    var bloom = makeBloom(canvas);
+    var NB = 12, coreCol = [], glowCol = [];
+    for (i = 0; i < NB; i++) {
+      var b = (i + 0.5) / NB;
+      coreCol.push('rgba(' + Math.round(lerp(60, 226, b)) + ',' + Math.round(lerp(120, 240, b)) + ',255,' + (0.14 + 0.86 * b).toFixed(3) + ')');
+      glowCol.push('rgba(37,99,235,' + (0.05 + 0.42 * b).toFixed(3) + ')');
+    }
+    // scanline pattern (one fillRect per frame)
+    var sl = document.createElement('canvas'); sl.width = 4; sl.height = 3;
+    var sg = sl.getContext('2d'); sg.fillStyle = 'rgba(0,0,0,0.55)'; sg.fillRect(0, 2, 4, 1);
+    var scan = ctx.createPattern(sl, 'repeat');
+    var div = Math.max(34, Math.min(W, H) / 9);                       // graticule division
+
+    function strokeRuns(n, which, width) {
+      ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      for (var b = 0; b < NB; b++) {
+        var open = false, any = false;
+        ctx.beginPath();
+        for (var i = 0; i < n - 1; i++) {
+          if (Q[i] === b) { if (!open) { ctx.moveTo(X[i], Y[i]); open = true; } ctx.lineTo(X[i + 1], Y[i + 1]); any = true; }
+          else open = false;
+        }
+        if (any) { ctx.strokeStyle = which[b]; ctx.stroke(); }
+      }
+    }
+
+    function graticule(a, t) {
+      if (a <= 0.003) return;
+      var x, y, k;
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(90,140,255,0.085)';
+      ctx.beginPath();
+      for (k = 1; (x = cx + k * div) < W; k++) { ctx.moveTo(Math.round(x) + 0.5, 0); ctx.lineTo(Math.round(x) + 0.5, H); ctx.moveTo(Math.round(cx - k * div) + 0.5, 0); ctx.lineTo(Math.round(cx - k * div) + 0.5, H); }
+      for (k = 1; (y = cy + k * div) < H; k++) { ctx.moveTo(0, Math.round(y) + 0.5); ctx.lineTo(W, Math.round(y) + 0.5); ctx.moveTo(0, Math.round(cy - k * div) + 0.5); ctx.lineTo(W, Math.round(cy - k * div) + 0.5); }
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(120,165,255,0.2)';
+      ctx.beginPath();
+      ctx.moveTo(0, Math.round(cy) + 0.5); ctx.lineTo(W, Math.round(cy) + 0.5);
+      ctx.moveTo(Math.round(cx) + 0.5, 0); ctx.lineTo(Math.round(cx) + 0.5, H);
+      var tk = div / 5;
+      for (k = -Math.ceil(cx / tk); k * tk < cx; k++) { x = Math.round(cx + k * tk) + 0.5; ctx.moveTo(x, cy - 3); ctx.lineTo(x, cy + 3); }
+      for (k = -Math.ceil(cy / tk); k * tk < cy; k++) { y = Math.round(cy + k * tk) + 0.5; ctx.moveTo(cx - 3, y); ctx.lineTo(cx + 3, y); }
+      ctx.stroke();
+      // read-outs
+      var fs = clamp(W / 42, 9.5, 12), pad = Math.max(14, W * 0.035);
+      ctx.font = '600 ' + fs + 'px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+      ctx.textBaseline = 'top';
+      var mode = t < T_TURN + 380 ? 'X-Y' : 'Y-T';
+      var blink = t > T_TURN && t < T_TURN + 760 ? (Math.floor((t - T_TURN) / 95) % 2 ? 0.35 : 1) : 1;
+      ctx.fillStyle = 'rgba(245,158,11,' + (0.85 * blink).toFixed(2) + ')';
+      ctx.textAlign = 'left'; ctx.fillText('CH1  ' + mode, pad, pad);
+      ctx.fillStyle = 'rgba(140,175,255,0.5)';
+      ctx.textAlign = 'right'; ctx.fillText('125 BPM', W - pad, pad);
+      var zq = E.inOut3(seg(t, T_ZOOM, T_TITLE)), tdiv = t < T_TURN + 380 ? '--' : (lerp(2, 20, zq)).toFixed(1) + 'ms';
+      ctx.textBaseline = 'bottom';
+      ctx.textAlign = 'left'; ctx.fillText('TIME/DIV ' + tdiv, pad, H - pad);
+      ctx.restore();
+    }
+
+    function render(t) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      var chrome = 1 - E.inOut3(seg(t, T_SOLID - 100, T_SOLID + 500));
+      graticule(chrome * E.out3(seg(t, 0, 500)), t);
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      var tipX = cx, tipY = cy, tipS = 1, i, k, ph = spin(t);
+      var solid = E.out3(seg(t, T_TITLE - 60, T_SOLID));
+      if (solid > 0) { ctx.save(); ctx.globalAlpha = solid; ctx.fillStyle = '#eef4ff'; ctx.fill(fill, 'evenodd'); ctx.restore(); }
+      ctx.globalCompositeOperation = 'lighter';
+
+      if (t < T_WAVE) {
+        // ------------------------------------------------ X-Y trace of the record, then the trace turns side-on
+        var dfrac = pen(seg(t, T_DRAW, T_DRAWN)), f = dfrac * (N - 1), n = Math.min(N, (f | 0) + 2);
+        var q = seg(t, T_TURN, T_WAVE), al = E.inOut3(q) * Math.PI / 2, ca = Math.cos(al), sa = Math.sin(al);
+        var pulse = Math.exp(-Math.max(0, t - T_DRAWN) / 240) * (t >= T_DRAWN ? 1 : 0);
+        var beat = ((t - T_DRAWN) / 480) % 1, head = t >= T_DRAWN ? E.out2(beat) * 1.25 : -1;    // re-trace pulse runs out along the groove every beat
+        var sc = R * (1 + 0.03 * pulse);
+        var fitX = Math.min(1, (W / 2 - 10) / (R * Math.abs(ca) + Ww / 2 * Math.abs(sa)));   // mid-turn the coil is wider than a phone: ease it in
+        ca *= fitX; sa *= fitX;
+        for (i = 0; i < n; i++) {
+          var a = ang[i] + ph, rr = sp.r[i] * sc, px = rr * Math.cos(a);
+          X[i] = cx + px * ca + zz[i] * sa; Y[i] = cy + rr * Math.sin(a);
+          var u = i / (N - 1), behind = head - u;
+          var glowp = behind > 0 && behind < 0.3 ? 1 - behind / 0.3 : 0;
+          var depth = 1 - 0.45 * Math.sin(al) * (0.5 + 0.5 * Math.cos(a)) * (1 - q * q);         // far side of the coil sits back
+          Br[i] = c01((0.42 + 0.5 * glowp * glowp + 0.3 * pulse) * depth + 0.4 * q * q);
+        }
+        if (n >= 2 && f < N - 1) { var uu = f - (f | 0); X[n - 1] = lerp(X[n - 2], X[n - 1], uu); Y[n - 1] = lerp(Y[n - 2], Y[n - 1], uu); }
+        if (n < 2) { n = 1; X[0] = cx; Y[0] = cy; }
+        for (i = 0; i < n; i++) { k = (Br[i] * NB) | 0; Q[i] = k >= NB ? NB - 1 : k; }
+        strokeRuns(n, glowCol, lw * 3.6);
+        strokeRuns(n, coreCol, lw);
+        if (t < T_DRAWN && n > 3) {                                  // phosphor is hottest right behind the beam
+          var m = Math.min(n - 1, 110);
+          for (var s = 0; s < 3; s++) {
+            var from = n - 1 - Math.round(m * (1 - s / 3));
+            ctx.beginPath(); ctx.moveTo(X[from], Y[from]);
+            for (i = from + 1; i < n; i++) ctx.lineTo(X[i], Y[i]);
+            ctx.strokeStyle = 'rgba(215,232,255,' + (0.2 * (s + 1)).toFixed(3) + ')'; ctx.lineWidth = lw * (1.2 + 0.5 * s); ctx.stroke();
+          }
+        }
+        tipX = X[n - 1]; tipY = Y[n - 1];
+        tipS = E.outBack(seg(t, 0, 220)) * (1 + 0.5 * pulse);
+      } else {
+        // ------------------------------------------------ Y-T waveform; then the timebase tightens until the envelope is the title
+        var e1 = E.inOut3(seg(t, T_WAVE, T_WAVE + 420));              // envelope: record profile -> audio bursts
+        var zq = seg(t, T_ZOOM, T_TITLE);
+        var c = sp.turns * Math.pow(C_END / sp.turns, E.inOut3(zq));  // cycles across the screen (exponential = constant-feel zoom)
+        var m = E.inOut3(seg(zq, 0.25, 1));                           // envelope -> letter silhouettes
+        var mg = E.smooth(seg(zq, 0.6, 1));                           // beam blanking opens the counters
+        var kick = 1 + 0.4 * Math.exp(-Math.max(0, t - T_WAVE - 120) / 170);
+        var phase0 = TAU * sp.turns * -0.5 - Math.PI / 2 + ph;        // phase at the centre of the screen (continuous with the X-Y trace)
+        var K = 2 * clamp(Math.round(260 / c), 1, 7), dP = Math.PI / K;   // even, so every crest and trough is sampled exactly
+        var P0 = phase0 - TAU * c * 0.5, P1 = phase0 + TAU * c * 0.5;
+        var railA = 1 - E.smooth(seg(zq, 0.7, 1));
+        var sq = E.smooth(seg(zq, 0.5, 0.95));                        // sine -> upright meander, so the hatch has clean edges
+        var jA = Math.ceil(P0 / dP), jB = Math.floor(P1 / dP), cnt = 0, j, hK = K / 2;
+        var col, sps, top, bot;
+        function emit(P, h) {
+          var vl = (P - phase0) / (TAU * c) + 0.5, vs = (Math.PI * (h + 1) - phase0) / (TAU * c) + 0.5;
+          var v = c01(lerp(vl, vs, sq));
+          col = Math.min(COLS - 1, (v * COLS) | 0); sps = spans[col];
+          var amp = lerp(e1 < 1 ? R * rAt(v) : 0, A0 * kick * envWave(v, t), e1);
+          if (sps.length) { top = sps[0][0]; bot = sps[sps.length - 1][1]; } else { top = bot = title.base; }
+          top = lerp(cy - amp, top, m); bot = lerp(cy + amp, bot, m);
+          var wv = 0.5 + 0.5 * Math.sin(P);                           // 0 = top of the stroke, 1 = bottom
+          hx[cnt] = xL + v * Ww; hy[cnt] = top + wv * (bot - top); hf[cnt] = wv; hc[cnt] = col; hs[cnt] = h; cnt++;
+        }
+        for (j = jA; j <= jB && cnt < HMAX - 2; j++) {
+          var rel = j - hK, h = Math.floor(rel / K);                  // stroke h runs from extreme h to extreme h+1
+          if (sq > 0 && rel - h * K === 0) emit(j * dP, h - 1);       // at an extreme: end of one stroke ...
+          emit(j * dP, h);                                            // ... and start of the next
+        }
+        // stroke it; where the title has counters the beam is blanked
+        var core = new Path2D(), rail = new Path2D();
+        for (i = 0; i < cnt - 1; i++) {
+          var inkA = spans[hc[i]].length > 0, inkB = spans[hc[i + 1]].length > 0;
+          if (!inkA || !inkB) { rail.moveTo(hx[i], hy[i]); rail.lineTo(hx[i + 1], hy[i + 1]); continue; }
+          var joint = sq > 0 && hs[i] !== hs[i + 1];
+          sps = spans[sq > 0.5 ? hc[i] : (hc[i] + hc[i + 1]) >> 1];
+          if (joint || !sps.length || sps.length === 1 || mg <= 0) { core.moveTo(hx[i], hy[i]); core.lineTo(hx[i + 1], hy[i + 1]); continue; }
+          // clip this little stroke to the (partly opened) spans, in the title's own vertical scale
+          var T0 = sps[0][0], B0 = sps[sps.length - 1][1], ya = T0 + hf[i] * (B0 - T0), yb = T0 + hf[i + 1] * (B0 - T0);
+          var lo = Math.min(ya, yb), hi = Math.max(ya, yb), dy = yb - ya;
+          for (k = 0; k < sps.length; k++) {
+            var s0 = sps[k][0], s1 = sps[k][1];
+            if (k > 0) { var g0 = (sps[k - 1][1] + s0) / 2; s0 = lerp(g0, s0, mg); }
+            if (k < sps.length - 1) { var g1 = (s1 + sps[k + 1][0]) / 2; s1 = lerp(g1, s1, mg); }
+            var a0 = Math.max(lo, s0), a1 = Math.min(hi, s1);
+            if (a1 <= a0) continue;
+            var p0 = Math.abs(dy) < 1e-6 ? 0 : (a0 - ya) / dy, p1 = Math.abs(dy) < 1e-6 ? 1 : (a1 - ya) / dy;
+            core.moveTo(lerp(hx[i], hx[i + 1], p0), lerp(hy[i], hy[i + 1], p0));
+            core.lineTo(lerp(hx[i], hx[i + 1], p1), lerp(hy[i], hy[i + 1], p1));
+          }
+        }
+        var dim = 1 - 0.45 * solid;
+        ctx.strokeStyle = 'rgba(37,99,235,' + (0.36 * dim).toFixed(3) + ')'; ctx.lineWidth = lerp(lw * 3.4, pitch * 1.2, m); ctx.stroke(core);
+        ctx.strokeStyle = 'rgba(214,232,255,' + (0.95 * dim).toFixed(3) + ')'; ctx.lineWidth = lerp(lw, Math.min(lw, pitch * 0.46), m); ctx.stroke(core);
+        if (railA > 0.01) {
+          ctx.strokeStyle = 'rgba(37,99,235,' + (0.36 * railA).toFixed(3) + ')'; ctx.lineWidth = lw * 3.4; ctx.stroke(rail);
+          ctx.strokeStyle = 'rgba(214,232,255,' + (0.95 * railA).toFixed(3) + ')'; ctx.lineWidth = lw; ctx.stroke(rail);
+        }
+        tipX = hx[cnt - 1]; tipY = hy[cnt - 1];
+        tipS = 1 + 0.9 * Math.exp(-Math.abs(t - T_SOLID) / 120) - E.in2(seg(t, T_SOLID + 300, T_SOLID + 700));
+      }
+      if (tipS > 0.01) {
+        var ts = clamp(R * 0.11, 15, 26) * tipS;
+        ctx.drawImage(tip, tipX - ts, tipY - ts, ts * 2, ts * 2);
+        ctx.beginPath(); ctx.arc(tipX, tipY, Math.max(0.1, lw * 1.5 * Math.min(1.4, tipS)), 0, TAU); ctx.fillStyle = '#ffffff'; ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      var flash = Math.exp(-Math.abs(t - T_SOLID) / 140);
+      bloom(ctx, 0.55 + 0.3 * flash, 0.5 + 0.4 * flash, 0.42 + 0.5 * flash);
+      if (chrome > 0.003) {                                          // CRT glass: scanlines + vignette, gone by the hand-off
+        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 0.5 * chrome; ctx.fillStyle = scan; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      }
+    }
+    // radius of the record at "time" v (v is proportional to trace angle)
+    var RP = new Float32Array(513);
+    (function () { var j = 0; for (var k = 0; k <= 512; k++) { var th = TOTAL * k / 512; while (j < N - 1 && sp.th[j] < th) j++; RP[k] = sp.r[j]; } })();
+    function rAt(v) { var f = c01(v) * 512, k = Math.min(511, f | 0); return lerp(RP[k], RP[k + 1], f - k); }
+    return { render: render };
+  }
+
+
+  return { play: play, duration: DURATION, name: NAME };
+})();
+
+// ---- page glue (prototype only; in the site this becomes a React effect) ----
+(function () {
+  var q = new URLSearchParams(location.search);
+  var at = q.has('t') ? parseFloat(q.get('t')) : null;
+  var btn = document.getElementById('replay');
+  var ctl = DJIntro.play(document.getElementById('stage'), {
+    at: at != null && isFinite(at) ? at : null,
+    reducedMotion: q.has('rm') ? q.get('rm') !== '0' : undefined,
+    speed: q.has('speed') ? parseFloat(q.get('speed')) : 1,
+    onComplete: function () {
+      if (window.parent !== window) { try { window.parent.postMessage({ type: 'dj-intro-done' }, '*'); } catch (err) {} }
+      if (q.has('embed')) return;
+      btn.hidden = false; requestAnimationFrame(function () { btn.classList.add('show'); });
+    }
+  });
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation(); btn.classList.remove('show'); btn.hidden = true; btn.blur(); ctl.replay();
+  });
+  btn.addEventListener('keydown', function (e) { e.stopPropagation(); });
+  window.addEventListener('message', function (e) {
+    var d = e.data, isObj = d && d.type === 'dj-intro-replay';
+    if (d === 'dj-intro-replay' || isObj) { btn.classList.remove('show'); btn.hidden = true; ctl.replay(isObj ? d.speed : undefined); }
+  });
+  window.__intro = ctl;
+})();
+</script>
+</body>
+</html>

@@ -61,6 +61,12 @@ function LandingPage() {
       <footer className="max-w-7xl mx-auto mt-12 pt-8 border-t border-white/10 text-center text-white/40 text-sm relative z-10">
         <p>© 2025 DJ Insanity. All rights reserved.</p>
         <p className="mt-2 text-white/20">Click the music icon to access Live Mode 🎵</p>
+        {/* Temporary: preview page for choosing the new intro animation */}
+        <p className="mt-2">
+          <a href="/intros/index.html" className="text-white/40 underline hover:text-white transition-all">
+            Preview intro options
+          </a>
+        </p>
       </footer>
 
       <LiveModeToggle onClick={() => navigate('/request')} isActive={false} />

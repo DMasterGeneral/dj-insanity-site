@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DJ Insanity intro — Option 4 · Light painting</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #050505; overflow: hidden; }
+  body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+  #stage {
+    position: fixed; inset: 0; cursor: pointer; touch-action: manipulation;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(37, 99, 235, 0.10) 0%, transparent 55%),
+      radial-gradient(ellipse at 80% 100%, rgba(139, 92, 246, 0.08) 0%, transparent 55%),
+      #050505;
+  }
+  #replay {
+    position: fixed; right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); z-index: 2;
+    font: 600 12px/1 inherit; letter-spacing: .14em; text-transform: uppercase;
+    color: rgba(255,255,255,.72); background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.16);
+    padding: 10px 14px; border-radius: 999px; cursor: pointer; opacity: 0; transition: opacity .4s ease, background .2s ease, color .2s ease;
+  }
+  #replay.show { opacity: 1; }
+  #replay:hover, #replay:focus-visible { background: rgba(37,99,235,.28); color: #fff; outline: none; }
+  #replay[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<button id="replay" type="button" hidden>Replay</button>
+<script>
+/*
+ * DJ INSANITY — intro prototype: Option 4 · Light painting
+ * A broad-nib pen of light: thick-and-thin strokes, a clock-spring uncoil into the wave, and the title written in one stroke.
+ *
+ * Self-contained: no build step, no network. One time value drives every pixel.
+ *   DJIntro.play(container, { onComplete })  ->  { skip, replay, seek, destroy, duration }
+ * Dev helpers on this page:  ?t=<ms> renders one frozen frame;  ?rm=1 forces the reduced-motion path.
+ */
+var DJIntro = (function () {
+  'use strict';
+  // ---------------------------------------------------------------- utils
+  var TAU = Math.PI * 2;
+  function c01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+  function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  /** progress of t through [a,b], clamped 0..1 */
+  function seg(t, a, b) { return c01((t - a) / (b - a)); }
+  var E = {
+    in2: function (x) { return x * x; },
+    out2: function (x) { return 1 - (1 - x) * (1 - x); },
+    in3: function (x) { return x * x * x; },
+    out3: function (x) { return 1 - Math.pow(1 - x, 3); },
+    inOut3: function (x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; },
+    out5: function (x) { return 1 - Math.pow(1 - x, 5); },
+    inOut5: function (x) { return x < 0.5 ? 16 * x * x * x * x * x : 1 - Math.pow(-2 * x + 2, 5) / 2; },
+    outExpo: function (x) { return x >= 1 ? 1 : 1 - Math.pow(2, -10 * x); },
+    inOutSine: function (x) { return -(Math.cos(Math.PI * x) - 1) / 2; },
+    smooth: function (x) { return x * x * (3 - 2 * x); },
+    outBack: function (x) { var c = 1.35; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); }
+  };
+  /** deterministic PRNG (mulberry32) so every run and every ?t= frame is identical */
+  function rng(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      var t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // ---------------------------------------------------------------- title glyphs
+  // Outlines of "DJ INSANITY" in Inter Black (900), traced once and embedded so the
+  // intro has no font dependency at runtime. Units: 1/4000 em, origin on the baseline, y down.
+  var G = {"unit":4000,"text":"DJ INSANITY","pos":[0,2891,5273,6070,7234,10313,12977,16043,19121,20285,23031],"total":26133,"cap":2910,"glyphs":{"D":[[[183,-2910],[190,-2915],[1390,-2914],[1530,-2903],[1710,-2873],[1820,-2843],[1910,-2812],[1980,-2783],[2060,-2744],[2150,-2692],[2220,-2644],[2310,-2571],[2383,-2500],[2452,-2420],[2524,-2320],[2572,-2240],[2612,-2160],[2653,-2060],[2682,-1970],[2703,-1890],[2717,-1810],[2723,-1790],[2743,-1620],[2748,-1450],[2743,-1290],[2724,-1130],[2704,-1030],[2687,-970],[2683,-950],[2654,-860],[2613,-760],[2586,-710],[2573,-680],[2544,-630],[2462,-510],[2422,-460],[2360,-394],[2300,-337],[2250,-297],[2210,-266],[2120,-208],[2070,-179],[1960,-127],[1910,-107],[1820,-76],[1710,-47],[1610,-28],[1510,-16],[1310,-5],[190,-5],[183,-10]],[[975,-2240],[980,-2243],[1250,-2243],[1390,-2234],[1470,-2223],[1550,-2204],[1610,-2184],[1640,-2173],[1710,-2133],[1770,-2083],[1824,-2020],[1854,-1970],[1884,-1910],[1903,-1860],[1924,-1790],[1943,-1680],[1953,-1580],[1955,-1460],[1953,-1340],[1944,-1240],[1933,-1170],[1912,-1080],[1892,-1020],[1874,-980],[1834,-910],[1803,-870],[1767,-830],[1740,-807],[1700,-777],[1650,-749],[1570,-717],[1530,-707],[1480,-695],[1370,-680],[1270,-677],[980,-677],[975,-680],[972,-690],[972,-2230]]],"J":[[[1414,-2910],[1420,-2915],[2180,-2915],[2191,-2910],[2190,-920],[2183,-780],[2173,-700],[2167,-680],[2154,-610],[2124,-520],[2085,-430],[2044,-360],[1983,-280],[1920,-215],[1850,-157],[1770,-106],[1690,-66],[1590,-28],[1510,-6],[1370,21],[1240,32],[1140,35],[1030,31],[940,23],[870,13],[760,-7],[690,-26],[580,-67],[500,-106],[420,-157],[354,-210],[290,-273],[227,-350],[180,-430],[147,-500],[116,-590],[96,-670],[87,-720],[76,-810],[74,-1090],[80,-1097],[850,-1097],[860,-1094],[863,-1090],[863,-900],[866,-830],[877,-770],[887,-740],[906,-700],[935,-660],[970,-628],[1030,-595],[1070,-586],[1140,-580],[1200,-585],[1250,-596],[1270,-606],[1308,-630],[1343,-660],[1371,-700],[1393,-750],[1404,-800],[1414,-900]]],"I":[[[183,-2910],[190,-2915],[960,-2915],[972,-2910],[972,-10],[970,-8],[960,-5],[190,-5],[183,-10]]],"N":[[[183,-2910],[190,-2915],[1030,-2915],[1040,-2915],[1045,-2910],[1456,-2230],[1483,-2190],[1487,-2180],[1513,-2140],[1517,-2130],[1544,-2090],[1657,-1900],[1713,-1810],[1814,-1640],[1901,-1480],[1985,-1310],[2062,-1130],[2110,-1004],[2115,-1010],[2116,-1020],[2114,-1070],[2097,-1300],[2075,-1700],[2074,-2910],[2080,-2915],[2880,-2915],[2885,-2910],[2885,-10],[2880,-5],[2030,-5],[2024,-10],[1377,-1070],[1267,-1260],[1196,-1390],[1105,-1570],[1026,-1740],[960,-1892],[956,-1890],[953,-1880],[956,-1820],[973,-1590],[994,-1190],[995,-10],[990,-5],[190,-5],[183,-10]]],"S":[[[1245,-2950],[1360,-2955],[1460,-2953],[1580,-2942],[1750,-2913],[1850,-2884],[1910,-2862],[2030,-2805],[2100,-2764],[2170,-2714],[2250,-2645],[2292,-2600],[2362,-2510],[2393,-2460],[2414,-2420],[2453,-2330],[2472,-2270],[2494,-2170],[2505,-2070],[2506,-2010],[2500,-2005],[1760,-2005],[1750,-2007],[1747,-2010],[1743,-2050],[1733,-2090],[1714,-2140],[1681,-2190],[1650,-2222],[1600,-2254],[1560,-2273],[1530,-2284],[1440,-2301],[1360,-2305],[1300,-2303],[1210,-2292],[1150,-2274],[1120,-2261],[1090,-2242],[1070,-2226],[1039,-2190],[1018,-2150],[1008,-2110],[1006,-2080],[1009,-2050],[1016,-2020],[1028,-1990],[1048,-1960],[1080,-1928],[1110,-1906],[1160,-1879],[1190,-1866],[1270,-1838],[1340,-1817],[1650,-1752],[1770,-1724],[1870,-1693],[1950,-1663],[2020,-1633],[2120,-1583],[2200,-1534],[2280,-1473],[2330,-1426],[2364,-1390],[2382,-1370],[2432,-1300],[2465,-1240],[2494,-1170],[2514,-1110],[2524,-1070],[2534,-1020],[2537,-980],[2543,-950],[2545,-860],[2543,-780],[2533,-700],[2523,-650],[2505,-580],[2494,-550],[2464,-480],[2433,-420],[2413,-390],[2384,-350],[2342,-300],[2300,-258],[2240,-207],[2150,-147],[2050,-95],[2010,-77],[1980,-66],[1860,-26],[1740,-2],[1720,3],[1550,25],[1370,30],[1190,24],[1080,14],[1010,3],[840,-36],[720,-76],[630,-116],[570,-147],[520,-179],[440,-238],[350,-324],[318,-360],[287,-400],[228,-490],[187,-580],[168,-630],[147,-700],[128,-790],[116,-870],[108,-1020],[120,-1027],[850,-1027],[858,-1020],[866,-960],[877,-910],[887,-880],[916,-820],[936,-790],[962,-760],[993,-730],[1020,-708],[1090,-666],[1140,-648],[1220,-628],[1290,-620],[1360,-617],[1410,-620],[1470,-627],[1560,-647],[1610,-669],[1640,-686],[1680,-718],[1713,-760],[1723,-780],[1734,-810],[1741,-860],[1733,-920],[1714,-960],[1681,-1000],[1640,-1032],[1600,-1055],[1560,-1074],[1440,-1113],[1270,-1153],[960,-1218],[820,-1258],[740,-1286],[670,-1316],[590,-1356],[480,-1426],[402,-1490],[360,-1531],[327,-1570],[297,-1610],[266,-1660],[263,-1670],[238,-1720],[217,-1780],[197,-1860],[185,-1950],[183,-2030],[185,-2100],[197,-2200],[216,-2280],[237,-2340],[268,-2410],[296,-2460],[336,-2520],[377,-2570],[420,-2616],[480,-2673],[560,-2734],[640,-2784],[760,-2843],[860,-2883],[1020,-2924],[1160,-2944]]],"A":[[[1026,-2910],[1030,-2914],[1040,-2915],[2100,-2915],[2107,-2910],[3084,-10],[3080,-6],[2200,-5],[2190,-8],[2034,-530],[2023,-560],[2020,-563],[2010,-563],[1130,-563],[1127,-560],[1117,-530],[973,-20],[968,-10],[960,-5],[100,-5],[90,-6],[86,-10]],[[1560,-2260],[1564,-2250],[1574,-2210],[1646,-1900],[1746,-1510],[1843,-1170],[1845,-1160],[1840,-1153],[1310,-1153],[1300,-1154],[1296,-1160],[1342,-1320],[1393,-1520],[1463,-1820],[1547,-2220]]],"T":[[[105,-2910],[110,-2915],[2620,-2915],[2633,-2910],[2633,-2290],[2630,-2280],[2620,-2277],[1770,-2277],[1763,-2270],[1763,-10],[1760,-7],[980,-5],[974,-10],[974,-2270],[970,-2275],[960,-2277],[110,-2277],[106,-2280],[105,-2290]]],"Y":[[[87,-2910],[90,-2913],[100,-2915],[1010,-2915],[1015,-2910],[1054,-2830],[1444,-2010],[1492,-1900],[1534,-1790],[1557,-1720],[1560,-1713],[1570,-1710],[1597,-1800],[1613,-1840],[1637,-1910],[1666,-1980],[2081,-2910],[2090,-2915],[2990,-2915],[3000,-2914],[3004,-2910],[1955,-1020],[1954,-10],[1950,-6],[1180,-5],[1168,-10],[1168,-1010],[1166,-1020],[403,-2360],[287,-2560],[283,-2570],[167,-2770],[163,-2780]]]}};
+
+  /** Lay the title out centred on (cx, cy), no wider than maxW and no taller than maxFont px. */
+  function layoutTitle(maxW, maxFont, cx, cy, tracking) {
+    var U = G.unit, n = G.text.length, i, j;
+    var emW = G.total / U + tracking * (n - 1);
+    var font = Math.min(maxFont, maxW / emW);
+    var width = emW * font, x0 = cx - width / 2, cap = G.cap / U * font, base = cy + cap / 2;
+    var glyphs = [];
+    for (i = 0; i < n; i++) {
+      var ch = G.text[i];
+      if (ch === ' ') continue;
+      var gx = x0 + (G.pos[i] / U + tracking * i) * font;
+      var minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
+      var contours = G.glyphs[ch].map(function (c) {
+        var a = new Float32Array(c.length * 2);
+        for (j = 0; j < c.length; j++) {
+          var x = gx + c[j][0] / U * font, y = base + c[j][1] / U * font;
+          a[2 * j] = x; a[2 * j + 1] = y;
+          if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y;
+        }
+        return a;
+      });
+      // biggest contour first (outer), counters after
+      contours.sort(function (a, b) { return Math.abs(polyArea(b)) - Math.abs(polyArea(a)); });
+      glyphs.push({ ch: ch, index: i, contours: contours, x0: minx, x1: maxx, y0: miny, y1: maxy });
+    }
+    return {
+      font: font, width: width, x0: x0, base: base, cap: cap, glyphs: glyphs,
+      left: glyphs[0].x0, right: glyphs[glyphs.length - 1].x1, top: base - cap, bottom: base
+    };
+  }
+  function polyArea(a) {
+    var s = 0, n = a.length / 2;
+    for (var i = 0; i < n; i++) { var j = (i + 1) % n; s += a[2 * i] * a[2 * j + 1] - a[2 * j] * a[2 * i + 1]; }
+    return s / 2;
+  }
+  /** Path2D of the solid title (fill with 'evenodd'). `from`/`to` restrict to glyph indices. */
+  function titlePath(title, from, to) {
+    var p = new Path2D();
+    title.glyphs.forEach(function (g, gi) {
+      if (from != null && (gi < from || gi >= to)) return;
+      g.contours.forEach(function (c) {
+        p.moveTo(c[0], c[1]);
+        for (var i = 2; i < c.length; i += 2) p.lineTo(c[i], c[i + 1]);
+        p.closePath();
+      });
+    });
+    return p;
+  }
+  /** For a vertical line at x: sorted list of [yTop, yBottom] spans inside the title's ink. */
+  function titleSpans(title, x) {
+    var ys = [];
+    for (var gi = 0; gi < title.glyphs.length; gi++) {
+      var g = title.glyphs[gi];
+      if (x < g.x0 || x > g.x1) continue;
+      for (var ci = 0; ci < g.contours.length; ci++) {
+        var c = g.contours[ci], n = c.length / 2;
+        for (var i = 0; i < n; i++) {
+          var j = (i + 1) % n, xa = c[2 * i], xb = c[2 * j];
+          if ((xa <= x && xb > x) || (xb <= x && xa > x)) {
+            ys.push(c[2 * i + 1] + (x - xa) / (xb - xa) * (c[2 * j + 1] - c[2 * i + 1]));
+          }
+        }
+      }
+    }
+    ys.sort(function (a, b) { return a - b; });
+    var spans = [];
+    for (var k = 0; k + 1 < ys.length; k += 2) if (ys[k + 1] - ys[k] > 0.3) spans.push([ys[k], ys[k + 1]]);
+    return spans;
+  }
+
+  // ---------------------------------------------------------------- shared drawing helpers
+  /** Soft round sprite (pen tip, particles) pre-rendered once; draw with drawImage. */
+  function glowSprite(size, stops) {
+    var c = document.createElement('canvas'); c.width = c.height = size;
+    var g = c.getContext('2d'), r = size / 2, gr = g.createRadialGradient(r, r, 0, r, r, r);
+    for (var i = 0; i < stops.length; i++) gr.addColorStop(stops[i][0], stops[i][1]);
+    g.fillStyle = gr; g.fillRect(0, 0, size, size);
+    return c;
+  }
+  /**
+   * Cheap bloom: the frame is downsampled through a small mip chain and added back on top.
+   * No ctx.filter / shadowBlur, so the cost is a handful of drawImage calls per frame.
+   */
+  function makeBloom(canvas) {
+    var levels = [], w = canvas.width, h = canvas.height;
+    for (var i = 0; i < 4; i++) {
+      w = Math.max(2, Math.ceil(w / 2)); h = Math.max(2, Math.ceil(h / 2));
+      var c = document.createElement('canvas'); c.width = w; c.height = h;
+      levels.push({ c: c, g: c.getContext('2d') });
+    }
+    return function (ctx, a1, a2, a3) {
+      var src = canvas;
+      for (var i = 0; i < levels.length; i++) {
+        var L = levels[i];
+        L.g.clearRect(0, 0, L.c.width, L.c.height);
+        L.g.drawImage(src, 0, 0, L.c.width, L.c.height);
+        src = L.c;
+      }
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.imageSmoothingEnabled = true;
+      var al = [0, a1, a2, a3 == null ? a2 : a3];
+      for (i = 1; i < levels.length; i++) {
+        if (al[i] <= 0) continue;
+        ctx.globalAlpha = al[i];
+        ctx.drawImage(levels[i].c, 0, 0, canvas.width, canvas.height);
+      }
+      ctx.restore();
+    };
+  }
+
+  // ---------------------------------------------------------------- player
+  /**
+   * play(container, { onComplete, at, reducedMotion })
+   *   container      element that the intro fills (position it yourself; the canvas is absolutely placed inside)
+   *   onComplete     called once when the timeline ends or the visitor skips
+   *   at             optional ms: render that single frame and do not animate (scrubbing / tests)
+   *   reducedMotion  override for prefers-reduced-motion
+   * Returns { skip, replay, seek, destroy, duration }.
+   * Everything on screen is a pure function of one time value, so React can drive it the same way.
+   */
+  function play(container, opts) {
+    opts = opts || {};
+    var canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block';
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', 'DJ INSANITY');
+    container.appendChild(canvas);
+    var ctx = canvas.getContext('2d');
+    var reduced = opts.reducedMotion != null ? opts.reducedMotion
+      : (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    var frozen = opts.at != null;
+    var speed = opts.speed > 0 ? +opts.speed : 1;                  // 1 = designed pace, 0.5 = half speed
+    var scene = null, raf = 0, t0 = 0, cur = frozen ? +opts.at : 0, finished = false, destroyed = false, fadeTimer = 0;
+
+    function resize() {
+      var r = container.getBoundingClientRect();
+      var W = Math.max(1, Math.round(r.width)), H = Math.max(1, Math.round(r.height));
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);          // cap DPR: phones report 3+
+      canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+      scene = setup({ W: W, H: H, dpr: dpr, ctx: ctx, canvas: canvas });
+      draw(cur);
+    }
+    function draw(t) {
+      cur = t;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      scene.render(clamp(t, 0, DURATION));
+    }
+    function finish() {
+      if (finished) return;
+      finished = true;
+      cancelAnimationFrame(raf); raf = 0;
+      draw(DURATION);
+      if (opts.onComplete) opts.onComplete();
+    }
+    function tick(now) {
+      if (destroyed) return;
+      var t = (now - t0) * speed;
+      if (t >= DURATION) { finish(); return; }
+      draw(t);
+      raf = requestAnimationFrame(tick);
+    }
+    function start() {
+      finished = false;
+      cancelAnimationFrame(raf); clearTimeout(fadeTimer);
+      if (frozen) { draw(cur); return; }
+      if (reduced) {                                              // no motion: a short fade to the title
+        canvas.style.transition = 'none'; canvas.style.opacity = '0';
+        draw(DURATION);
+        void canvas.offsetWidth;
+        canvas.style.transition = 'opacity 600ms ease-out'; canvas.style.opacity = '1';
+        fadeTimer = setTimeout(finish, 900);
+        return;
+      }
+      t0 = performance.now();
+      raf = requestAnimationFrame(tick);
+    }
+    function onSkip(e) {
+      if (finished || frozen) return;
+      if (e && e.type === 'keydown' && (e.metaKey || e.ctrlKey || e.altKey)) return;
+      clearTimeout(fadeTimer); canvas.style.transition = 'none'; canvas.style.opacity = '1';
+      finish();
+    }
+    container.addEventListener('pointerdown', onSkip);
+    window.addEventListener('keydown', onSkip);
+    window.addEventListener('resize', resize);
+    resize();
+    start();
+    return {
+      duration: DURATION,
+      skip: onSkip,
+      replay: function (s) { if (s > 0) speed = +s; frozen = false; start(); },
+      seek: function (ms) { frozen = true; cancelAnimationFrame(raf); draw(ms); },
+      destroy: function () {
+        destroyed = true; cancelAnimationFrame(raf); clearTimeout(fadeTimer);
+        container.removeEventListener('pointerdown', onSkip);
+        window.removeEventListener('keydown', onSkip);
+        window.removeEventListener('resize', resize);
+        if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+      }
+    };
+  }
+
+
+
+  // ---------------------------------------------------------------- line geometry shared by the line-based options
+  /**
+   * The record as ONE line: a spiral whose pitch changes to make the spindle, the label ring,
+   * three bands of grooves with gaps between tracks, and a closed outer rim.
+   * Returned points are evenly spaced along the line, centred on 0,0, radius 1, and the line
+   * ends at twelve o'clock travelling to the right (clockwise on screen).
+   */
+  function buildSpiral(N, sections) {
+    var M = 30000, turns = 0, i, s;
+    for (i = 0; i < sections.length; i++) turns += sections[i][0];
+    var fx = new Float64Array(M + 1), fy = new Float64Array(M + 1), fr = new Float64Array(M + 1), cum = new Float64Array(M + 1);
+    var total = turns * TAU;
+    for (i = 0; i <= M; i++) {
+      var th = total * i / M, tt = th / TAU, r0 = 0, r = 0;
+      for (s = 0; s < sections.length; s++) {
+        var sec = sections[s];
+        if (tt <= sec[0] || s === sections.length - 1) {
+          var f = c01(tt / sec[0]);
+          r = lerp(r0, sec[1], sec[2] ? E.smooth(f) : f);
+          break;
+        }
+        tt -= sec[0]; r0 = sec[1];
+      }
+      var a = th - total - Math.PI / 2;
+      fx[i] = r * Math.cos(a); fy[i] = r * Math.sin(a); fr[i] = r;
+      if (i) cum[i] = cum[i - 1] + Math.hypot(fx[i] - fx[i - 1], fy[i] - fy[i - 1]);
+    }
+    var L = cum[M], x = new Float32Array(N), y = new Float32Array(N), rad = new Float32Array(N), ang = new Float32Array(N), j = 0;
+    for (i = 0; i < N; i++) {
+      var d = L * i / (N - 1);
+      while (j < M - 1 && cum[j + 1] < d) j++;
+      var u = (d - cum[j]) / Math.max(1e-9, cum[j + 1] - cum[j]);
+      x[i] = lerp(fx[j], fx[j + 1], u); y[i] = lerp(fy[j], fy[j + 1], u); rad[i] = lerp(fr[j], fr[j + 1], u);
+      ang[i] = total * (j + u) / M;
+    }
+    return { x: x, y: y, r: rad, th: ang, length: L, turns: turns };
+  }
+
+  /** Resample a polyline (flat [x0,y0,x1,y1,...]) to N points evenly spaced along its length. */
+  function resample(flat, N) {
+    var M = flat.length / 2, cum = new Float64Array(M), i;
+    for (i = 1; i < M; i++) cum[i] = cum[i - 1] + Math.hypot(flat[2 * i] - flat[2 * i - 2], flat[2 * i + 1] - flat[2 * i - 1]);
+    var L = cum[M - 1], x = new Float32Array(N), y = new Float32Array(N), src = new Float32Array(N), j = 0;
+    for (i = 0; i < N; i++) {
+      var d = L * i / (N - 1);
+      while (j < M - 2 && cum[j + 1] < d) j++;
+      var u = c01((d - cum[j]) / Math.max(1e-9, cum[j + 1] - cum[j]));
+      x[i] = lerp(flat[2 * j], flat[2 * j + 2], u); y[i] = lerp(flat[2 * j + 1], flat[2 * j + 3], u); src[i] = j + u;
+    }
+    return { x: x, y: y, src: src, length: L, cum: cum };
+  }
+
+  /**
+   * The title as ONE line: it runs along the baseline, and at each letter climbs round the
+   * whole outline (ducking in and out of the counters of D and A) before carrying on.
+   * kind: 0 = baseline rail, 1 = letter outline, 2 = bridge into a counter.
+   */
+  function oneLineTitle(title, margin) {
+    var pts = [], kind = [], marks = [];
+    function push(x, y, k) { pts.push(x, y); kind.push(k); }
+    push(title.left - margin, title.base, 0);
+    title.glyphs.forEach(function (g) {
+      var outer = g.contours[0], n = outer.length / 2, i, k;
+      var step = polyArea(outer) > 0 ? 1 : -1;                    // clockwise on screen
+      var maxy = -1e9; for (i = 0; i < n; i++) maxy = Math.max(maxy, outer[2 * i + 1]);
+      var ei = 0, bx = 1e9;
+      for (i = 0; i < n; i++) if (outer[2 * i + 1] > maxy - 0.02 * title.font && outer[2 * i] < bx) { bx = outer[2 * i]; ei = i; }
+      var bridges = {};
+      for (k = 1; k < g.contours.length; k++) {
+        var inner = g.contours[k], m = inner.length / 2, best = 1e18, bo = 0, bi = 0;
+        for (i = 0; i < n; i++) for (var j = 0; j < m; j++) {
+          var d = Math.pow(outer[2 * i] - inner[2 * j], 2) + Math.pow(outer[2 * i + 1] - inner[2 * j + 1], 2);
+          if (d < best) { best = d; bo = i; bi = j; }
+        }
+        bridges[bo] = { c: inner, at: bi };
+      }
+      var start = pts.length / 2;
+      for (i = 0; i <= n; i++) {
+        var vi = ((ei + step * i) % n + n) % n;
+        push(outer[2 * vi], outer[2 * vi + 1], i === 0 ? 0 : 1);
+        if (i < n && bridges[vi]) {
+          var br = bridges[vi], mm = br.c.length / 2;
+          for (var q = 0; q <= mm; q++) { var wi = (br.at + q) % mm; push(br.c[2 * wi], br.c[2 * wi + 1], q === 0 ? 2 : 1); }
+          push(outer[2 * vi], outer[2 * vi + 1], 2);
+        }
+      }
+      marks.push({ a: start, b: pts.length / 2 - 1, g: g });
+    });
+    push(title.right + margin, title.base, 0);
+    return { pts: pts, kind: kind, marks: marks };
+  }
+
+  /** Pen speed while the record is drawn: slow at the centre, flat out through the grooves, easing onto the rim. Maps time 0..1 to length 0..1. */
+  function penCurve() {
+    var LUT = new Float32Array(257), acc = 0, i;
+    for (i = 1; i <= 256; i++) {
+      var q = i / 256, v = q < 0.7 ? 0.02 + q * q : (0.02 + 0.49) * lerp(1, 0.1, E.smooth((q - 0.7) / 0.3));
+      acc += v; LUT[i] = acc;
+    }
+    return function (q) { var f = c01(q) * 256, k = Math.min(255, f | 0); return lerp(LUT[k], LUT[k + 1], f - k) / acc; };
+  }
+  var RECORD = [[0.5, 0.05, 1], [1, 0.05], [0.8, 0.31, 1], [1, 0.31], [0.5, 0.41, 1],
+    [5, 0.565], [0.4, 0.61, 1], [5, 0.765], [0.4, 0.81, 1], [5, 0.965], [0.4, 1, 1], [1, 1]];
+
+  // ================================================================ OPTION 4 — LIGHT PAINTING
+  var NAME = 'Light painting';
+  // 125 BPM grid, one beat = 480 ms.
+  var T_DRAW = 240,     // the pen starts to move
+      T_DRAWN = 1440,   // record painted (beat 3)
+      T_UNCOIL = 1920,  // the coil lets go like a clock spring (beat 4)
+      T_WAVE = 2760,    // sprung flat: a waveform
+      T_WRITE = 3180,   // the pen dives under the wave and starts to write
+      T_TITLE = 4220,   // last letter written
+      T_SOLID = 4420,   // last letter filled
+      DURATION = 5280;
+
+  function setup(env) {
+    var W = env.W, H = env.H, dpr = env.dpr, ctx = env.ctx, canvas = env.canvas;
+    var cx = W / 2, cy = H * 0.5;
+    var R = Math.min(W * 0.37, H * 0.3, 250);
+    var title = layoutTitle(Math.min(W * 0.82, 1040), 150, cx, cy - Math.min(W * 0.82 / 7.9, 150) * 0.1, 0.035);
+    var F = title.font;
+    var N = 2600, i, j;
+    var rnd = rng(77031);
+    var sp = buildSpiral(N, [[0.5, 0.05, 1], [1, 0.05], [0.8, 0.31, 1], [1, 0.31], [0.5, 0.42, 1], [3.7, 0.665], [0.4, 0.725, 1], [3.7, 0.97], [0.3, 1, 1], [1, 1]]);
+    var pen = penCurve();
+    var sLen = new Float32Array(N), sTurn = new Float32Array(N), birth = new Float32Array(N), prev = 0, q = 0;
+    for (i = 0; i < N - 1; i++) {
+      var dx = sp.x[i + 1] - sp.x[i], dy = sp.y[i + 1] - sp.y[i], a = Math.atan2(dy, dx);
+      sLen[i] = Math.hypot(dx, dy) * R;
+      if (i) { var d = a - prev; while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU; sTurn[i] = d; }
+      prev = a;
+    }
+    for (i = 0; i < N; i++) { while (q < 1 && pen(q) < i / (N - 1)) q += 1 / 2000; birth[i] = T_DRAW + q * (T_DRAWN - T_DRAW); }
+
+    // ---- the waveform
+    var margin = F * 0.18;
+    var xL = title.left - margin, xR = title.right + margin, Ww = xR - xL;
+    var A0 = Math.min(H * 0.13, R * 0.8);
+    function waveY(v, t) {
+      var e = Math.pow(Math.max(0, Math.sin(Math.PI * c01(v))), 0.7) * (0.6 + 0.4 * Math.sin(TAU * 1.1 * v - t * 0.004));
+      return e * (0.72 * Math.sin(TAU * 2.6 * v - t * 0.0088) + 0.28 * Math.sin(TAU * 6.1 * v + t * 0.0135 + 0.9));
+    }
+    function waveAmp(t) { return A0 * (0.1 + 0.9 * E.out3(seg(t, T_WAVE - 130, T_WAVE + 240))) * (1 + 0.4 * Math.exp(-Math.max(0, t - 2880) / 180) * (t >= 2880 ? 1 : 0)); }
+
+    // ---- the written title: hook down from the end of the wave, underline swept back to the left, curl up, then every letter in one stroke
+    var ol = oneLineTitle(title, margin);
+    var uy = title.base + F * 0.34, flat = [], fk = [];
+    function bez(p0, p1, p2, p3, kd, n) {
+      for (var s = (flat.length ? 1 : 0); s <= n; s++) {
+        var u = s / n, o = 1 - u;
+        flat.push(o * o * o * p0[0] + 3 * o * o * u * p1[0] + 3 * o * u * u * p2[0] + u * u * u * p3[0], o * o * o * p0[1] + 3 * o * o * u * p1[1] + 3 * o * u * u * p2[1] + u * u * u * p3[1]);
+        fk.push(kd);
+      }
+    }
+    var hook = Math.min(F * 0.45, W - 7 - xR), uR = [title.right - F * 0.1, uy], uL = [title.left + F * 0.15, uy + F * 0.02];
+    bez([xR, cy], [xR + hook, cy], [xR + hook, uy], uR, 4, 24);
+    bez(uR, [lerp(uR[0], uL[0], 0.33), uy + F * 0.1], [lerp(uR[0], uL[0], 0.66), uy + F * 0.1], uL, 3, 48);
+    var cl = Math.min(F * 0.55, title.left - 6);
+    bez(uL, [title.left - cl, uy], [title.left - margin - cl * 0.7, title.base], [title.left - margin, title.base], 5, 24);
+    for (i = 1; i < ol.kind.length; i++) { flat.push(ol.pts[2 * i], ol.pts[2 * i + 1]); fk.push(ol.kind[i]); }
+    var M;
+    var approx = resample(flat, 2);
+    M = Math.round(clamp(approx.length / Math.max(1.5, F / 70), 1200, 4200));
+    var tl = resample(flat, M), kind = new Uint8Array(M), tb = new Float32Array(M), gOf = new Int16Array(M);
+    for (i = 0; i < M; i++) kind[i] = fk[Math.min(fk.length - 1, Math.ceil(tl.src[i]))];
+    function headAt(t) { var x = seg(t, T_WRITE, T_TITLE); return lerp(x, E.inOutSine(x), 0.55) * (M - 1); }
+    q = 0;
+    for (i = 0; i < M; i++) { while (q < 1 && lerp(q, E.inOutSine(q), 0.55) * (M - 1) < i) q += 1 / 4000; tb[i] = T_WRITE + q * (T_TITLE - T_WRITE); }
+    // when is each letter closed? (it fills as soon as the pen has finished its outline)
+    var off = 24 + 48 + 24, glyphDone = [], fills = [];
+    ol.marks.forEach(function (m, gi) {
+      var srcEnd = off + m.b, k = 0; while (k < M - 1 && tl.src[k] < srcEnd) k++;
+      glyphDone.push(tb[k]); fills.push(titlePath(title, gi, gi + 1));
+    });
+    var u3a = 0, u3b = 0; for (i = 0; i < M; i++) if (kind[i] === 3) { if (!u3a) u3a = i; u3b = i; }
+    var tailEnd = 0; while (tailEnd < M - 1 && kind[tailEnd] === 4) tailEnd++;      // the wave is drawn in through the hook, up to the underline
+
+    // ---- working buffers (wave/record line followed by the written path)
+    var CAP = N + M + 4, X = new Float32Array(CAP), Y = new Float32Array(CAP), Wd = new Float32Array(CAP), Ht = new Float32Array(CAP);
+    var AX = new Float32Array(CAP), AY = new Float32Array(CAP), BX = new Float32Array(CAP), BY = new Float32Array(CAP), WYt = new Float32Array(N);
+    var nibC = Math.cos(-0.66), nibS = Math.sin(-0.66);              // broad nib held at about 38 degrees
+    var tip = glowSprite(128, [[0, 'rgba(255,255,255,1)'], [0.1, 'rgba(255,244,214,1)'], [0.26, 'rgba(250,180,60,0.62)'], [0.55, 'rgba(245,158,11,0.15)'], [1, 'rgba(245,158,11,0)']]);
+    var bloom = makeBloom(canvas);
+    var STOPS = [[0, 62, 56, 190, 0.5], [0.3, 124, 86, 240, 0.8], [0.55, 245, 158, 11, 0.95], [0.8, 255, 212, 128, 1], [1, 255, 250, 236, 1]], PAL = [], NP = 20;
+    for (i = 0; i < NP; i++) {
+      var h = i / (NP - 1), s0 = 0; while (s0 < STOPS.length - 2 && STOPS[s0 + 1][0] < h) s0++;
+      var A = STOPS[s0], Bq = STOPS[s0 + 1], f = c01((h - A[0]) / (Bq[0] - A[0]));
+      PAL.push('rgba(' + Math.round(lerp(A[1], Bq[1], f)) + ',' + Math.round(lerp(A[2], Bq[2], f)) + ',' + Math.round(lerp(A[3], Bq[3], f)) + ',' + lerp(A[4], Bq[4], f).toFixed(3) + ')');
+    }
+    var SPK = []; for (i = 0; i < 256; i++) SPK.push([rnd() * TAU, 0.02 + 0.13 * rnd() * rnd(), 240 + 300 * rnd(), rnd()]);
+
+    /** Fill the line as a ribbon whose width follows the nib; colour follows heat. */
+    function ribbon(a0, n, alpha) {
+      var i, a, b;
+      for (i = a0; i < n; i++) {
+        var i0 = i > a0 ? i - 1 : i, i1 = i < n - 1 ? i + 1 : i, dx = X[i1] - X[i0], dy = Y[i1] - Y[i0], inv = 1 / (Math.hypot(dx, dy) || 1);
+        dx *= inv; dy *= inv;
+        var w = Wd[i] * (0.14 + 0.86 * Math.abs(dx * nibS - dy * nibC));
+        AX[i] = X[i] - dy * w; AY[i] = Y[i] + dx * w; BX[i] = X[i] + dy * w; BY[i] = Y[i] - dx * w;
+      }
+      ctx.globalAlpha = alpha;
+      for (a = a0; a < n - 1; a += 14) {
+        b = Math.min(n - 1, a + 14);
+        ctx.beginPath(); ctx.moveTo(AX[a], AY[a]);
+        for (i = a + 1; i <= b; i++) ctx.lineTo(AX[i], AY[i]);
+        for (i = b; i >= a; i--) ctx.lineTo(BX[i], BY[i]);
+        ctx.closePath();
+        ctx.fillStyle = PAL[Math.round(c01(Ht[(a + b) >> 1]) * (NP - 1))];
+        ctx.fill();
+      }
+      // violet under-glow along the centre line
+      ctx.beginPath();
+      var open = false;
+      for (i = a0; i < n; i++) {
+        if (Wd[i] < 0.5) { open = false; continue; }
+        if (open) ctx.lineTo(X[i], Y[i]); else { ctx.moveTo(X[i], Y[i]); open = true; }
+      }
+      ctx.strokeStyle = 'rgba(124,86,240,0.16)'; ctx.lineWidth = Math.max(4, R * 0.035); ctx.lineJoin = 'round'; ctx.lineCap = 'butt'; ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    function rot(t) { return -TAU * 1.05 * (T_UNCOIL - t) / 1000; }
+    var _px = 0, _py = 0;
+    function penPos(tau) {                                           // where was the pen at time tau? (for sparks)
+      if (tau >= T_DRAW && tau <= T_DRAWN) {
+        var f = pen(seg(tau, T_DRAW, T_DRAWN)) * (N - 1), i0 = Math.min(N - 2, f | 0), u = f - i0, r = rot(tau), c = Math.cos(r), s = Math.sin(r);
+        var x = lerp(sp.x[i0], sp.x[i0 + 1], u) * R, y = lerp(sp.y[i0], sp.y[i0 + 1], u) * R;
+        _px = cx + x * c - y * s; _py = cy + x * s + y * c; return true;
+      }
+      if (tau >= T_WRITE && tau <= T_TITLE) {
+        var hf = headAt(tau), h0 = Math.min(M - 2, hf | 0), hu = hf - h0;
+        _px = lerp(tl.x[h0], tl.x[h0 + 1], hu); _py = lerp(tl.y[h0], tl.y[h0 + 1], hu); return true;
+      }
+      return false;
+    }
+
+    function render(t) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      var i, n = 0, a0 = 0, tipX = cx, tipY = cy, tipS = 1;
+      var wRec = R * 0.03, wWave = Math.max(2.2, R * 0.034), wTit = Math.max(1.5, F * 0.05);
+
+      // letters fill in the pen's wake
+      for (i = 0; i < fills.length; i++) {
+        var fa = E.out3(seg(t, glyphDone[i] + 30, glyphDone[i] + 250));
+        if (fa > 0) { ctx.globalAlpha = fa; ctx.fillStyle = '#fffaf0'; ctx.fill(fills[i], 'evenodd'); }
+      }
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'lighter';
+
+      if (t < T_UNCOIL) {
+        // ------------------------------------------------ the pen paints the record
+        var f = pen(seg(t, T_DRAW, T_DRAWN)) * (N - 1); n = Math.min(N, (f | 0) + 2);
+        var r = rot(t), cr = Math.cos(r), sr = Math.sin(r);
+        var pulse = Math.exp(-Math.max(0, t - T_DRAWN) / 260) * (t >= T_DRAWN ? 1 : 0), sc = R * (1 + 0.035 * pulse);
+        for (i = 0; i < n; i++) {
+          X[i] = cx + sc * (sp.x[i] * cr - sp.y[i] * sr); Y[i] = cy + sc * (sp.x[i] * sr + sp.y[i] * cr);
+          var label = sp.r[i] <= 0.312;
+          Ht[i] = Math.max(label ? 0.6 : 0.3, Math.exp(-(t - birth[i]) / 420)) + 0.3 * pulse;
+          Wd[i] = wRec * (label ? 0.8 : 1) * (0.55 + 0.45 * Math.min(1, sp.r[i] * 4));
+        }
+        if (n >= 2 && f < N - 1) { var u = f - (f | 0); X[n - 1] = lerp(X[n - 2], X[n - 1], u); Y[n - 1] = lerp(Y[n - 2], Y[n - 1], u); }
+        if (n < 2) { n = 1; X[0] = cx; Y[0] = cy; }
+        tipS = E.outBack(seg(t, 0, 220)) * (1 + 0.5 * pulse);
+      } else if (t < T_WRITE || headAt(t) < 1) {
+        // ------------------------------------------------ the coil springs open into the waveform
+        n = N;
+        var qq = seg(t, T_UNCOIL, T_WAVE), A = waveAmp(t);
+        // curvature drains out of the coil; it reaches flat a little early, bows the other way, and settles (a spring, not a fade)
+        var k = qq < 0.88 ? E.inOut3(qq / 0.88) : 1 + 0.006 * Math.sin(Math.PI * (qq - 0.88) / 0.12);
+        var kc = Math.min(1, k), kw = E.smooth(seg(kc, 0.86, 1));
+        for (i = 0; i < N; i++) WYt[i] = cy + A * waveY(i / (N - 1), t);
+        var dir = 0, x = 0, y = 0, step = Ww / (N - 1), x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+        X[N - 1] = 0; Y[N - 1] = 0;
+        for (i = N - 2; i >= 0; i--) {
+          var wdy = WYt[i + 1] - WYt[i], len = lerp(sLen[i], Math.hypot(step, wdy), kc), ang = dir + kw * Math.atan2(wdy, step);
+          x -= len * Math.cos(ang); y -= len * Math.sin(ang);
+          X[i] = x; Y[i] = y;
+          if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+          dir -= sTurn[i] * (1 - k);
+        }
+        // keep the opening loops inside a box that grows from the record's size to the wave's width
+        // (centred on stage while it is a coil; by the end the pen is pinned to the right-hand end of the wave, so the
+        //  last loop hangs below the pen and may only be as tall as the space under the centre line)
+        var s = E.smooth(seg(kc, 0.8, 1));
+        var boxW = lerp(R * 2, Ww, E.smooth(kc)), boxH = Math.min(lerp(H * 0.62, H * 0.5 - 28, s), lerp(R * 2, Math.max(R * 2.3, Ww * 0.8), E.smooth(kc)));
+        var fit = Math.min(1, boxW / (x1 - x0 || 1), boxH / (y1 - y0 || 1));
+        var ox = lerp(cx - fit * (x0 + x1) / 2, xR, s), oy = lerp(cy - fit * (y0 + y1) / 2, WYt[N - 1], s);
+        for (i = 0; i < N; i++) { X[i] = X[i] * fit + ox; Y[i] = Y[i] * fit + oy; }
+        var heat = 0.3 + 0.55 * E.smooth(qq) + 0.25 * Math.exp(-Math.max(0, t - 2880) / 200) * (t >= 2880 ? 1 : 0);
+        for (i = 0; i < N; i++) {
+          var uu = i / (N - 1);
+          Ht[i] = heat * (0.75 + 0.25 * uu) + (sp.r[i] <= 0.312 ? 0.3 * (1 - kc) : 0);
+          Wd[i] = lerp(wRec * (0.55 + 0.45 * Math.min(1, sp.r[i] * 4)), wWave * (0.35 + 0.65 * Math.sin(Math.PI * uu)), kc);
+        }
+      }
+      if (t >= T_WRITE && headAt(t) >= 1) {
+        // ------------------------------------------------ the pen writes; the wave is drawn in behind it
+        var A2 = waveAmp(t), tf = E.inOut3(seg(t, T_WRITE + 30, T_WRITE + 560));
+        var tail = tf * (N - 1 + tailEnd), hf = headAt(t), hN = Math.min(M, (hf | 0) + 2);
+        n = 0;
+        if (tail < N - 1) {
+          for (i = Math.floor(tail); i < N; i++) {
+            var v = i / (N - 1);
+            X[n] = xL + v * Ww; Y[n] = cy + A2 * waveY(v, t);
+            Ht[n] = 0.85 - 0.45 * tf; Wd[n] = wWave * (0.35 + 0.65 * Math.sin(Math.PI * v)) * Math.min(1, (i - tail) / 40 + 0.15); n++;
+          }
+        }
+        var j0 = tail > N - 1 ? Math.floor(tail - (N - 1)) : 1;
+        var settle = E.smooth(seg(t, T_TITLE + 60, T_SOLID + 420));
+        for (j = j0; j < hN; j++) {
+          var kd = kind[j];
+          X[n] = tl.x[j]; Y[n] = tl.y[j];
+          var age = t - tb[j], hh = Math.max(kd === 3 ? 0.62 : 0.5, Math.exp(-age / 520));
+          var wk = kd === 1 ? 1 : kd === 3 ? 1.35 * Math.pow(Math.sin(Math.PI * c01((j - u3a + 4) / (u3b - u3a + 8))), 0.45) : kd === 2 ? 0.25 : 0.5;
+          if (kd === 0 || kd === 2 || kd === 5) { wk *= 1 - settle; hh *= 1 - 0.5 * settle; }   // travel strokes fade once the title stands
+          if (kd === 1) { wk *= 1 - 0.45 * settle; }
+          Ht[n] = hh; Wd[n] = wTit * wk * Math.min(1, (hf - j) / 10 + 0.2) * Math.min(1, (j - j0) / 24 + 0.2); n++;
+        }
+        if (hf < M - 1 && n >= 2) { var hu = hf - (hf | 0); X[n - 1] = lerp(X[n - 2], X[n - 1], hu); Y[n - 1] = lerp(Y[n - 2], Y[n - 1], hu); }
+        tipS = 1 + 0.9 * Math.exp(-Math.abs(t - T_SOLID) / 130) - E.in2(seg(t, T_SOLID + 280, T_SOLID + 700));
+      }
+      if (n >= 2) ribbon(a0, n, 1);
+      tipX = X[Math.max(0, n - 1)]; tipY = Y[Math.max(0, n - 1)];
+
+      // sparks thrown off the pen while it draws and writes
+      var j1 = Math.floor(t / 8), sz = Math.max(1.1, R * 0.008);
+      ctx.fillStyle = 'rgba(255,214,140,1)';
+      for (j = Math.max(0, j1 - 70); j <= j1; j++) {
+        var sk = SPK[j & 255], tau = j * 8, ag = t - tau;
+        if (ag < 0 || ag > sk[2] || !penPos(tau)) continue;
+        var life = ag / sk[2], sv = sk[1] * (R / 140) * (1 - 0.5 * life);
+        ctx.globalAlpha = (1 - life) * (0.5 + 0.5 * sk[3]);
+        var ss = sz * (0.6 + sk[3]) * (1 - 0.5 * life);
+        ctx.fillRect(_px + Math.cos(sk[0]) * sv * ag - ss / 2, _py + Math.sin(sk[0]) * sv * ag + 0.00022 * ag * ag * (R / 140) - ss / 2, ss, ss);
+      }
+      ctx.globalAlpha = 1;
+      if (tipS > 0.01) {
+        var ts = clamp(R * 0.12, 16, 28) * tipS;
+        ctx.drawImage(tip, tipX - ts, tipY - ts, ts * 2, ts * 2);
+        ctx.globalAlpha = 0.55;                                      // four-point flare
+        ctx.drawImage(tip, tipX - ts * 2.6, tipY - ts * 0.09, ts * 5.2, ts * 0.18);
+        ctx.drawImage(tip, tipX - ts * 0.09, tipY - ts * 2.6, ts * 0.18, ts * 5.2);
+        ctx.globalAlpha = 1;
+        ctx.beginPath(); ctx.arc(tipX, tipY, Math.max(0.1, Math.max(1.6, R * 0.014) * Math.min(1.4, tipS)), 0, TAU); ctx.fillStyle = '#fffaf0'; ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      var flash = Math.exp(-Math.abs(t - T_SOLID) / 150);
+      bloom(ctx, 0.6 + 0.3 * flash, 0.6 + 0.4 * flash, 0.5 + 0.5 * flash);
+    }
+    return { render: render };
+  }
+
+
+  return { play: play, duration: DURATION, name: NAME };
+})();
+
+// ---- page glue (prototype only; in the site this becomes a React effect) ----
+(function () {
+  var q = new URLSearchParams(location.search);
+  var at = q.has('t') ? parseFloat(q.get('t')) : null;
+  var btn = document.getElementById('replay');
+  var ctl = DJIntro.play(document.getElementById('stage'), {
+    at: at != null && isFinite(at) ? at : null,
+    reducedMotion: q.has('rm') ? q.get('rm') !== '0' : undefined,
+    speed: q.has('speed') ? parseFloat(q.get('speed')) : 1,
+    onComplete: function () {
+      if (window.parent !== window) { try { window.parent.postMessage({ type: 'dj-intro-done' }, '*'); } catch (err) {} }
+      if (q.has('embed')) return;
+      btn.hidden = false; requestAnimationFrame(function () { btn.classList.add('show'); });
+    }
+  });
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation(); btn.classList.remove('show'); btn.hidden = true; btn.blur(); ctl.replay();
+  });
+  btn.addEventListener('keydown', function (e) { e.stopPropagation(); });
+  window.addEventListener('message', function (e) {
+    var d = e.data, isObj = d && d.type === 'dj-intro-replay';
+    if (d === 'dj-intro-replay' || isObj) { btn.classList.remove('show'); btn.hidden = true; ctl.replay(isObj ? d.speed : undefined); }
+  });
+  window.__intro = ctl;
+})();
+</script>
+</body>
+</html>
