@@ -38,7 +38,14 @@ export async function onRequestGet(context) {
     it.status === 'fulfilled' ? it.value : null,
     dz.status === 'fulfilled' ? dz.value : null,
   );
-  if (!results) return error(502, 'search_unavailable', 'Search is having trouble — type the song instead.');
+  // Which provider answered, for diagnosing from outside (no secrets in here).
+  const status = (r) => (r.status === 'fulfilled' ? 'ok' : String(r.reason).slice(0, 60).replace(/[^\x20-\x7e]/g, '?'));
+  const providers = { 'X-Search-Providers': `itunes=${status(it)}; deezer=${status(dz)}` };
+  if (!results) {
+    const res = error(502, 'search_unavailable', 'Search is having trouble — type the song instead.');
+    res.headers.set('X-Search-Providers', providers['X-Search-Providers']);
+    return res;
+  }
 
   // Only cache a full answer: a result missing one provider should not stick for 6 hours.
   if (cache && it.status === 'fulfilled' && dz.status === 'fulfilled') {
@@ -48,5 +55,5 @@ export async function onRequestGet(context) {
     const put = cache.put(cacheKey, stored).catch((err) => console.error('search: cache write failed', err));
     if (context.waitUntil) context.waitUntil(put);
   }
-  return json({ results }, 200, { 'Cache-Control': BROWSER_CACHE });
+  return json({ results }, 200, { 'Cache-Control': BROWSER_CACHE, ...providers });
 }
