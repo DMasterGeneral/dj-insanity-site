@@ -28,7 +28,14 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // Everything else (admins/, stripeEvents/, rate/ counters, ...) is server-only.
+    // A signed-in user may read only their own admin entry (the dashboard's admin check).
+    // Entries are created by scripts/make-admin.mjs with the service account.
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Everything else (stripeEvents/, rate/ counters, ...) is server-only.
     match /{document=**} {
       allow read, write: if false;
     }

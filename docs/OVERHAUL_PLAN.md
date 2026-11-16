@@ -155,6 +155,8 @@ match /bookings/{id}  { allow read: if isAdmin();
                           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updatedAt']);
                         allow create, delete: if false; }
 match /settings/{doc} { allow read, write: if isAdmin(); }
+match /admins/{uid}   { allow read: if request.auth != null && request.auth.uid == uid;   // own entry only (dashboard gate)
+                        allow write: if false; }
 match /{document=**}  { allow read, write: if false; }
 ```
 The service account used by the functions bypasses rules. Also **turn off public sign-up** in Firebase Auth (owner action, section 7).
