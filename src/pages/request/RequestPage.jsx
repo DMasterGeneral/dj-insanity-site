@@ -309,6 +309,7 @@ export default function RequestPage() {
   const [closedByServer, setClosedByServer] = useState(false);
 
   const loading = status.loading && !preview;
+  const failed = status.error && !preview && !closedByServer;
   const open = !closedByServer && (preview || status.requestsOpen);
 
   return (
@@ -320,6 +321,13 @@ export default function RequestPage() {
             <span className="rq-spinner" aria-hidden="true" />
             Loading…
           </p>
+        ) : failed ? (
+          <div className="rq-notice rq-notice--error" role="alert">
+            <p>Couldn’t check whether requests are open. Check your connection and try again.</p>
+            <Button className="rq-retry" onClick={status.retry}>
+              Try again
+            </Button>
+          </div>
         ) : open ? (
           <OpenRequests onClosed={() => setClosedByServer(true)} />
         ) : (

@@ -39,6 +39,7 @@ function loadTurnstile() {
 export function createTurnstile(action) {
   const ts = {
     started: false,
+    box: /** @type {HTMLElement|null} */ (null),
     widgetId: /** @type {string|null} */ (null),
     token: /** @type {string|null} */ (null),
     waiters: /** @type {((t: string|null) => void)[]} */ ([]),
@@ -46,8 +47,16 @@ export function createTurnstile(action) {
 
   /** @param {HTMLElement | null} box  the element to render the widget into */
   function start(box) {
-    if (!TURNSTILE_SITE_KEY || ts.started) return;
+    if (!TURNSTILE_SITE_KEY) return;
+    if (ts.started) {
+      if (ts.box === box || ts.box?.isConnected) return;
+      // The form was replaced (e.g. "Submit another"): its widget went with the old container.
+      remove();
+      ts.widgetId = null;
+      ts.token = null;
+    }
     ts.started = true;
+    ts.box = box;
     const settle = (token) => {
       ts.token = token;
       if (token) ts.waiters.splice(0).forEach((w) => w(token));
