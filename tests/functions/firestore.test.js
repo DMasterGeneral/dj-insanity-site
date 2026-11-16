@@ -256,4 +256,12 @@ describe('deadlines', () => {
     expect(timeoutSpy).toHaveBeenCalledWith(8000)
     expect(console.error).toHaveBeenCalledWith('requests: create failed', expect.objectContaining({ name: 'FirestoreError', status: 0, grpcStatus: 'UNAVAILABLE' }))
   })
+
+  it('a 200 whose body cannot be read is an UNAVAILABLE error, not an empty document', async () => {
+    const broken = () => new Response(new ReadableStream({ start(c) { c.error(new Error('stalled')) } }), { status: 200 })
+    stubFetch(broken)
+    const err = await createClient(sa).get('requests/abc').catch((e) => e)
+    expect(err).toBeInstanceOf(FirestoreError)
+    expect(err).toMatchObject({ status: 0, grpcStatus: 'UNAVAILABLE' })
+  })
 })

@@ -258,7 +258,14 @@ export function createClient(sa) {
     } catch (err) {
       throw new FirestoreError(`Firestore request failed: ${err instanceof Error ? err.message : err}`, 0, 'UNAVAILABLE');
     }
-    const data = await res.json().catch(() => ({}));
+    let data;
+    try {
+      data = await res.json();
+    } catch (err) {
+      // A success whose body cannot be read (stalled, cut off) must not pass as an empty document.
+      if (res.ok) throw new FirestoreError(`Firestore response unreadable: ${err instanceof Error ? err.message : err}`, 0, 'UNAVAILABLE');
+      data = {};
+    }
     if (!res.ok) {
       const e = data.error || {};
       throw new FirestoreError(e.message || `Firestore HTTP ${res.status}`, res.status, e.status || 'UNKNOWN');
