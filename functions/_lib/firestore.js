@@ -5,6 +5,8 @@
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/datastore';
 const TOKEN_MARGIN_MS = 60_000;
+// Deadline for each call to Google, so a stalled upstream cannot hang a visitor's request.
+const FETCH_TIMEOUT_MS = 8_000;
 
 /** Error from Firestore or the token endpoint, with the HTTP status and gRPC status string. */
 export class FirestoreError extends Error {
@@ -199,6 +201,7 @@ export async function getAccessToken(sa) {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
   } catch (err) {
     throw new FirestoreError(`token request failed: ${err instanceof Error ? err.message : err}`, 0, 'UNAVAILABLE');
@@ -250,6 +253,7 @@ export function createClient(sa) {
         method,
         headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
         body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
     } catch (err) {
       throw new FirestoreError(`Firestore request failed: ${err instanceof Error ? err.message : err}`, 0, 'UNAVAILABLE');

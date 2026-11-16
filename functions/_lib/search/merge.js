@@ -71,22 +71,25 @@ export function mergeResults(query, itunes, deezer) {
 
   const deezerRows = deezer.filter((s) => !isJunk(s)).map((song) => ({ song, key: matchKey(song) }));
 
-  // Deezer job 1: upgrade rows iTunes already has. A row takes the explicit flag and IDs from its
-  // first Deezer match, and an uncensored title from any match. Every Deezer hit is used, not just
-  // the top 8: a match needs the same artist and title, so a lower hit is still the same song.
-  /** @type {Set<object>} */
-  const upgraded = new Set();
+  // Deezer job 1: upgrade rows iTunes already has. Any explicit match makes the row explicit; the
+  // row takes its IDs from its first Deezer match, or from its first explicit match when there is
+  // one (so a clean twin listed first does not win), and an uncensored title from any match.
+  // Every Deezer hit is used, not just the top 8: a match needs the same artist and title, so a
+  // lower hit is still the same song.
+  /** @type {Map<object, boolean>} row → whether its IDs came from an explicit match */
+  const idsFrom = new Map();
   for (const d of deezerRows) {
     const row = base.find((r) => sameKey(r.key, d.key));
     if (!row) continue;
     const s = row.song;
     if (s.title.includes('*') && !d.song.title.includes('*')) s.title = d.song.title;
-    if (upgraded.has(row)) continue;
-    upgraded.add(row);
-    s.explicit = s.explicit || d.song.explicit;
+    if (d.song.explicit) s.explicit = true;
+    s.source = 'both';
+    const had = idsFrom.get(row);
+    if (had === true || (had === false && !d.song.explicit)) continue;
+    idsFrom.set(row, d.song.explicit);
     if (d.song.deezerId) s.deezerId = d.song.deezerId;
     if (d.song.isrc) s.isrc = d.song.isrc;
-    s.source = 'both';
   }
 
   // Deezer job 2: Deezer's first non-junk hit, when it is the obvious answer (see `dominant`),

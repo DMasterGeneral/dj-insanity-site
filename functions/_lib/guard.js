@@ -4,6 +4,7 @@
 const JSON_TYPE = 'application/json; charset=utf-8';
 const DEV_HASH_SALT = 'dj-insanity-dev-salt';
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+const TURNSTILE_TIMEOUT_MS = 5_000;
 
 /**
  * A success response.
@@ -129,7 +130,7 @@ export async function verifyTurnstile(env, token, ip) {
   body.append('response', token);
   if (ip) body.append('remoteip', ip);
   try {
-    const res = await fetch(TURNSTILE_VERIFY_URL, { method: 'POST', body });
+    const res = await fetch(TURNSTILE_VERIFY_URL, { method: 'POST', body, signal: AbortSignal.timeout(TURNSTILE_TIMEOUT_MS) });
     const data = await res.json();
     return { ok: data.success === true, codes: data['error-codes'] || [] };
   } catch {
