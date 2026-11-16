@@ -2,13 +2,13 @@
 //   node scripts/record-search-fixtures.mjs               all default queries
 //   node scripts/record-search-fixtures.mjs "some song"   just these
 // Writes tests/fixtures/search/<slug>.deezer.json and <slug>.itunes.json. Uses the same URLs as
-// functions/_lib/search so the fixtures match what the function sees.
+// shared/search and functions/_lib/search so the fixtures match what the site sees.
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { deezerUrl } from '../functions/_lib/search/deezer.js';
-import { itunesUrl } from '../functions/_lib/search/itunes.js';
-import { normalizeQuery } from '../functions/_lib/search/normalize.js';
+import { itunesUrl } from '../shared/search/itunes.js';
+import { normalizeQuery } from '../shared/search/normalize.js';
 
 export const QUERIES = [
   'mr brightside',

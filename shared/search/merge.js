@@ -9,7 +9,7 @@ export const MAX_RESULTS = 8;
 const DOMINANT_RANK = 500000;
 const DOMINANT_RATIO = 1.5;
 
-/** @typedef {import('../../../shared/contracts.js').Song} Song */
+/** @typedef {import('../contracts.js').Song} Song */
 
 /**
  * Drop rows whose match key equals an earlier row's. When the dropped row has an uncensored title

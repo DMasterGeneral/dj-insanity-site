@@ -1,4 +1,5 @@
-// iTunes search: URL, response parsing and the fetch itself.
+// iTunes search: URL and response parsing. The browser does the fetch (src/pages/request/searchSongs.js):
+// iTunes answers 429 to Cloudflare's shared server IPs, and it sends Access-Control-Allow-Origin: *.
 // iTunes has the originals Deezer misses, but only clean versions with censored titles ("F**k").
 // It occasionally answers with an empty body.
 
@@ -13,12 +14,12 @@ export function itunesUrl(q) {
 /**
  * Map an iTunes search body to Song[]. Throws when the body has no results list.
  * @param {any} body
- * @returns {import('../../../shared/contracts.js').Song[]}
+ * @returns {import('../contracts.js').Song[]}
  */
 export function parseItunes(body) {
   if (!body || typeof body !== 'object' || !Array.isArray(body.results)) throw new Error('itunes: no results');
 
-  /** @type {import('../../../shared/contracts.js').Song[]} */
+  /** @type {import('../contracts.js').Song[]} */
   const songs = [];
   for (const t of body.results) {
     if (!t || t.kind !== 'song') continue;
@@ -26,7 +27,7 @@ export function parseItunes(body) {
     const artist = typeof t.artistName === 'string' ? t.artistName.trim() : '';
     if (!title || !artist) continue;
 
-    /** @type {import('../../../shared/contracts.js').Song} */
+    /** @type {import('../contracts.js').Song} */
     const song = { title, artist, explicit: t.trackExplicitness === 'explicit', source: 'itunes' };
     const album = typeof t.collectionName === 'string' ? t.collectionName.trim() : '';
     if (album) song.album = album;
@@ -38,15 +39,3 @@ export function parseItunes(body) {
   return songs;
 }
 
-/**
- * Search iTunes. Rejects on network error, timeout, non-2xx, or an empty or garbled body.
- * @param {string} q normalised query
- * @param {{ timeoutMs?: number }} [opts]
- */
-export async function searchItunes(q, { timeoutMs = 2500 } = {}) {
-  const res = await fetch(itunesUrl(q), { signal: AbortSignal.timeout(timeoutMs) });
-  if (!res.ok) throw new Error(`itunes: HTTP ${res.status}`);
-  const text = await res.text();
-  if (!text.trim()) throw new Error('itunes: empty body');
-  return parseItunes(JSON.parse(text));
-}

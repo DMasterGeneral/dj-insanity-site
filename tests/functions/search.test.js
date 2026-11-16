@@ -1,11 +1,10 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { parseDeezer, deezerUrl } from '../../functions/_lib/search/deezer.js'
-import { parseItunes, itunesUrl } from '../../functions/_lib/search/itunes.js'
-import { mergeResults, MAX_RESULTS } from '../../functions/_lib/search/merge.js'
-import { normalizeQuery, matchKey, sameKey, starEqual, cleanTitle, fold } from '../../functions/_lib/search/normalize.js'
-import { junkFilter } from '../../functions/_lib/search/junk.js'
-import { onRequestGet as search } from '../../functions/api/search.js'
+import { parseDeezer } from '../../functions/_lib/search/deezer.js'
+import { parseItunes } from '../../shared/search/itunes.js'
+import { mergeResults, MAX_RESULTS } from '../../shared/search/merge.js'
+import { normalizeQuery, matchKey, sameKey, starEqual, cleanTitle, fold } from '../../shared/search/normalize.js'
+import { junkFilter } from '../../shared/search/junk.js'
 import { validateSongRequest } from '../../shared/contracts.js'
 import { QUERIES, slug } from '../../scripts/record-search-fixtures.mjs'
 
@@ -17,11 +16,6 @@ const merged = (q) => {
   return mergeResults(q, itunes, deezer)
 }
 const top = (q, n) => merged(q).slice(0, n)
-
-afterEach(() => {
-  vi.unstubAllGlobals()
-  vi.restoreAllMocks()
-})
 
 describe('normalize', () => {
   it('normalises queries', () => {
@@ -225,95 +219,5 @@ describe('providers', () => {
     const [it] = parseItunes(raw('move bitch ludacris', 'itunes'))
     expect(it).toMatchObject({ artist: 'Ludacris', explicit: false, itunesId: '1452863856', durationSec: 251, source: 'itunes' })
     expect(it.title).toContain('*')
-  })
-})
-
-describe('GET /api/search', () => {
-  const ctx = (q, extra = {}) => ({ request: new Request(`https://site.test/api/search?q=${encodeURIComponent(q)}`), ...extra })
-
-  /** Serve fixtures for one query; `deezer` / `itunes` override a provider's reply. */
-  function stubProviders(q, { deezer, itunes } = {}) {
-    const fetchSpy = vi.fn(async (url) => {
-      if (url === deezerUrl(q)) return deezer ? deezer() : Response.json(raw(q, 'deezer'))
-      if (url === itunesUrl(q)) return itunes ? itunes() : Response.json(raw(q, 'itunes'))
-      throw new Error(`unexpected fetch ${url}`)
-    })
-    vi.stubGlobal('fetch', fetchSpy)
-    return fetchSpy
-  }
-
-  it('returns merged results with a 5 minute browser cache', async () => {
-    const fetchSpy = stubProviders('move bitch ludacris')
-    const res = await search(ctx('  Move   Bitch LUDACRIS '))
-    expect(res.status).toBe(200)
-    expect(res.headers.get('Cache-Control')).toBe('public, max-age=300')
-    const body = await res.json()
-    expect(body.ok).toBe(true)
-    expect(body.results[0]).toMatchObject({ title: 'Move Bitch', explicit: true })
-    expect(fetchSpy).toHaveBeenCalledTimes(2)
-    for (const [, init] of fetchSpy.mock.calls) expect(init.signal).toBeInstanceOf(AbortSignal)
-  })
-
-  it('rejects queries under 2 or over 80 characters', async () => {
-    const fetchSpy = stubProviders('x')
-    for (const q of ['', ' a ', 'x'.repeat(81)]) {
-      const res = await search(ctx(q))
-      expect(res.status).toBe(400)
-    }
-    expect(fetchSpy).not.toHaveBeenCalled()
-  })
-
-  it('falls back to iTunes when Deezer hits its quota', async () => {
-    stubProviders('fuck you ceelo', { deezer: () => Response.json({ error: { code: 4, message: 'Quota limit exceeded' } }) })
-    const body = await (await search(ctx('fuck you ceelo'))).json()
-    expect(body.results.every((s) => s.source === 'itunes')).toBe(true)
-  })
-
-  it('falls back to Deezer when iTunes sends an empty body', async () => {
-    stubProviders('fuck you ceelo', { itunes: () => new Response('') })
-    const body = await (await search(ctx('fuck you ceelo'))).json()
-    expect(body.results.every((s) => s.source === 'deezer')).toBe(true)
-  })
-
-  it('answers 502 search_unavailable when both fail', async () => {
-    stubProviders('fuck you ceelo', {
-      itunes: () => { throw new TypeError('network') },
-      deezer: () => new Response('oops', { status: 500 }),
-    })
-    const res = await search(ctx('fuck you ceelo'))
-    expect(res.status).toBe(502)
-    expect(await res.json()).toEqual({
-      ok: false,
-      error: { code: 'search_unavailable', message: 'Search is having trouble — type the song instead.' },
-    })
-  })
-
-  it('serves repeat queries from the edge cache, keyed by the normalised query', async () => {
-    const store = new Map()
-    vi.stubGlobal('caches', {
-      default: {
-        match: async (req) => store.get(req.url)?.clone(),
-        put: async (req, res) => { store.set(req.url, res) },
-      },
-    })
-    const fetchSpy = stubProviders('mr brightside')
-    const waits = []
-    await search(ctx('mr brightside', { waitUntil: (p) => waits.push(p) }))
-    await Promise.all(waits)
-    expect(store.size).toBe(1)
-    expect(store.get('https://site.test/api/search?q=mr%20brightside').headers.get('Cache-Control')).toBe('public, max-age=21600')
-
-    const res = await search(ctx('MR  Brightside'))
-    expect(fetchSpy).toHaveBeenCalledTimes(2)
-    expect(res.headers.get('Cache-Control')).toBe('public, max-age=300')
-    expect((await res.json()).results[0].artist).toBe('The Killers')
-  })
-
-  it('does not cache a result missing a provider', async () => {
-    const store = new Map()
-    vi.stubGlobal('caches', { default: { match: async () => undefined, put: async (req, res) => { store.set(req.url, res) } } })
-    stubProviders('mr brightside', { deezer: () => new Response('', { status: 503 }) })
-    expect((await search(ctx('mr brightside', { waitUntil: () => {} }))).status).toBe(200)
-    expect(store.size).toBe(0)
   })
 })
