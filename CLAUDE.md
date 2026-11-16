@@ -21,8 +21,8 @@ node scripts/visual-check.mjs <baseUrl> /path,/path [--wait ms]   # headless Chr
 - `src/intro/` — Stardust intro overlay; `config.js` is the one place to change engine/speed.
 - `src/content/site.js` — all landing copy; unconfirmed values are flagged `placeholder: true`.
 - `src/components/` — `BookingForm`, `Sample`, `ui/` primitives (themed by `--ui-*` CSS variables). `src/index.css` is shared with Classic; don't restyle it.
-- `shared/contracts.js` — request/booking validation used by BOTH the browser and `functions/`.
-- `functions/api/*` — Pages Functions (status, search, requests, bookings); `functions/_lib/*` — Firestore REST client, search merge, rate limits (Firestore counter docs, no KV), notify (Resend + optional ntfy).
+- `shared/contracts.js` — request/booking validation used by BOTH the browser and `functions/`. `shared/search/` — search merge rules (run in the browser; iTunes is fetched by the browser because it rate-limits Cloudflare IPs).
+- `functions/api/*` — Pages Functions (status, search/deezer, requests, bookings); `functions/_lib/*` — Firestore REST client, Deezer fetch, rate limits (Firestore counter docs, no KV), notify (Resend + optional ntfy).
 - `public/intros/` — temporary showcase of the four intro candidates; remove once the DJ picks.
 - `worker/` — old Stripe Worker (`dj-insanity-tips`); retire after tips move to `functions/`.
 - `docs/OVERHAUL_PLAN.md` — the plan, with a build log at the end.
