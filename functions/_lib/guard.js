@@ -136,3 +136,24 @@ export async function verifyTurnstile(env, token, ip) {
     return { ok: false, codes: ['network-error'] };
   }
 }
+
+/**
+ * The 400 for a payload that failed validation, with the per-field messages from shared/contracts.js.
+ * @param {Record<string, string>} fields
+ * @returns {Response}
+ */
+export function invalid(fields) {
+  return new Response(
+    JSON.stringify({ ok: false, error: { code: 'invalid', message: 'Some details need fixing.', fields } }),
+    { status: 400, headers: { 'Content-Type': JSON_TYPE } },
+  );
+}
+
+/**
+ * A 24-character random URL-safe document ID (18 random bytes, base64url).
+ * @returns {string}
+ */
+export function randomId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(18));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_');
+}
