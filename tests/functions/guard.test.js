@@ -113,6 +113,7 @@ describe('verifyTurnstile', () => {
     expect(init.body.get('secret')).toBe('sec')
     expect(init.body.get('response')).toBe('tok')
     expect(init.body.get('remoteip')).toBe('1.2.3.4')
+    expect(init.signal).toBeInstanceOf(AbortSignal)
   })
 
   it('reports failure codes and network errors', async () => {

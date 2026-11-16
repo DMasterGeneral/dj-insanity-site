@@ -13,6 +13,7 @@ import {
   _clearTokenCache,
 } from '../../functions/_lib/firestore.js'
 import { hit, LIMITS } from '../../functions/_lib/ratelimit.js'
+import { onRequestPost as postRequest } from '../../functions/api/requests/index.js'
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const DOCS = 'https://firestore.googleapis.com/v1/projects/demo-test/databases/(default)/documents'
@@ -232,5 +233,27 @@ describe('rate limits', () => {
   it('has the planned limits', () => {
     expect(LIMITS.requests).toEqual({ limit: 6, windowSec: 600 })
     expect(LIMITS.bookings).toEqual({ limit: 3, windowSec: 3600 })
+  })
+})
+
+describe('deadlines', () => {
+  it('a Firestore call that never answers times out and the endpoint answers 503 unavailable', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal)
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => realTimeout(20))
+    // Token exchange answers; Firestore hangs until the request's signal aborts it.
+    stubFetch((url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason))))
+    const res = await postRequest({
+      request: new Request('https://site.test/api/requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ typed: 'some song', clientId: 'device-abc-123' }),
+      }),
+      env: { FIREBASE_SERVICE_ACCOUNT: JSON.stringify(sa) },
+    })
+    expect(res.status).toBe(503)
+    expect((await res.json()).error.code).toBe('unavailable')
+    expect(timeoutSpy).toHaveBeenCalledWith(8000)
+    expect(console.error).toHaveBeenCalledWith('requests: create failed', expect.objectContaining({ name: 'FirestoreError', status: 0, grpcStatus: 'UNAVAILABLE' }))
   })
 })

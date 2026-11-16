@@ -166,6 +166,20 @@ describe('merge on recorded fixtures (acceptance list, plan 4.1)', () => {
   })
 })
 
+describe('merge: Deezer upgrade when a clean twin comes first', () => {
+  it('any explicit match makes the row explicit, and its IDs beat the clean twin', () => {
+    const itunes = [{ title: 'Move B***h', artist: 'Ludacris', explicit: false, source: 'itunes', itunesId: '1' }]
+    const deezer = [
+      { title: 'Move B***h', artist: 'Ludacris', explicit: false, source: 'deezer', deezerId: '10', isrc: 'USAAA0000001' },
+      { title: 'Move Bitch', artist: 'Ludacris', explicit: true, source: 'deezer', deezerId: '20', isrc: 'USAAA0000002' },
+      { title: 'Move Bitch', artist: 'Ludacris', explicit: false, source: 'deezer', deezerId: '30', isrc: 'USAAA0000003' },
+    ]
+    expect(mergeResults('move bitch', itunes, deezer)).toEqual([
+      { title: 'Move Bitch', artist: 'Ludacris', explicit: true, source: 'both', itunesId: '1', deezerId: '20', isrc: 'USAAA0000002' },
+    ])
+  })
+})
+
 describe('merge fallbacks', () => {
   const { itunes, deezer } = providers('fuck you ceelo')
 
