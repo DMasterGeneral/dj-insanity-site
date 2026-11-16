@@ -1,0 +1,36 @@
+rules_version = '2';
+
+// Checked in for review. NOT published yet: the owner pastes this into the Firebase console in Phase 1.
+// The service account used by functions/api/* bypasses these rules; the browser never writes.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    match /requests/{id} {
+      allow read: if isAdmin();
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow create, delete: if false;
+    }
+
+    match /bookings/{id} {
+      allow read: if isAdmin();
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow create, delete: if false;
+    }
+
+    match /settings/{doc} {
+      allow read, write: if isAdmin();
+    }
+
+    // Everything else (admins/, stripeEvents/, rate/ counters, ...) is server-only.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

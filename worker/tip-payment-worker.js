@@ -50,7 +50,7 @@ export default {
                 let data;
                 try {
                     data = JSON.parse(text);
-                } catch (e) {
+                } catch {
                     throw new Error('Failed to parse iTunes response');
                 }
 

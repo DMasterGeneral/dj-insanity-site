@@ -1,9 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-
 @import "tailwindcss";
 
 @theme {
-  --font-family-sans: 'Inter', sans-serif;
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --color-midnight: #050505;
   --color-electric: #2563EB;
   --color-gold: #F59E0B;
@@ -15,7 +13,7 @@
 
 body {
   background-color: #050505;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   overflow-x: hidden;
 }
 

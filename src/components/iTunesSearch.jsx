@@ -55,7 +55,7 @@ export default function MusicSearch({ onSelectSong }) {
                         }));
                     }
                 }
-            } catch (e) {
+            } catch {
                 console.log(`Invidious instance ${instance} failed, trying next...`);
             }
         }
@@ -90,7 +90,7 @@ export default function MusicSearch({ onSelectSong }) {
                     return;
                 }
             }
-        } catch (e) {
+        } catch {
             console.log('iTunes fetch failed, trying Invidious...');
         }
 
@@ -102,7 +102,7 @@ export default function MusicSearch({ onSelectSong }) {
                 setLoading(false);
                 return;
             }
-        } catch (e) {
+        } catch {
             console.log('Invidious fetch failed, trying MusicBrainz...');
         }
 

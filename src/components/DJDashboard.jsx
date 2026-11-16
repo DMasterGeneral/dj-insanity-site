@@ -4,7 +4,7 @@ import { subscribeToRequests, archiveRequest, signInDJ, signOutDJ, onAuthChange 
 
 export default function DJDashboard() {
     const [sortBy, setSortBy] = useState('time');
-    const [now, setNow] = useState(Date.now());
+    const [now, setNow] = useState(() => Date.now());
     const [requests, setRequests] = useState([]);
     const [user, setUser] = useState(null);
     const [email, setEmail] = useState('');

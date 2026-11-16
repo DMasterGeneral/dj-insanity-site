@@ -12,7 +12,7 @@ import { DollarSign, X } from 'lucide-react';
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 // Payment form component (inside Elements provider)
-function CheckoutForm({ amount, requestId, onClose }) {
+function CheckoutForm({ amount, requestId }) {
     const stripe = useStripe();
     const elements = useElements();
     const [isLoading, setIsLoading] = useState(false);
