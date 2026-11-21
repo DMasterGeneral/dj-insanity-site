@@ -179,6 +179,27 @@ describe('client', () => {
     expect(await fs.get('settings/nope')).toBeNull()
   })
 
+  it('getWithTime returns the data and updateTime; patch can require that updateTime', async () => {
+    const spy = stubFetch((url) =>
+      url.endsWith(':commit')
+        ? Response.json({ writeResults: [{}] })
+        : Response.json({ name: 'x', fields: { status: { stringValue: 'awaiting_payment' } }, updateTime: '2026-11-21T01:02:03.456789Z' }),
+    )
+    const fs = createClient(sa)
+    const doc = await fs.getWithTime('requests/abc')
+    expect(doc).toEqual({ data: { status: 'awaiting_payment' }, updateTime: '2026-11-21T01:02:03.456789Z' })
+    await fs.patch('requests/abc', { tip: { state: 'paid' }, updatedAt: serverTimestamp }, ['tip.state', 'updatedAt'], { updateTime: doc.updateTime })
+    expect(JSON.parse(spy.mock.calls.at(-1)[1].body).writes[0]).toEqual({
+      update: {
+        name: 'projects/demo-test/databases/(default)/documents/requests/abc',
+        fields: { tip: { mapValue: { fields: { state: { stringValue: 'paid' } } } } },
+      },
+      updateMask: { fieldPaths: ['tip.state'] },
+      updateTransforms: [{ fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' }],
+      currentDocument: { updateTime: '2026-11-21T01:02:03.456789Z' },
+    })
+  })
+
   it('turns Firestore errors into FirestoreError with HTTP and gRPC status', async () => {
     stubFetch(() => Response.json({ error: { code: 409, message: 'Document already exists', status: 'ALREADY_EXISTS' } }, { status: 409 }))
     const err = await createClient(sa).create('requests', 'abc', { a: 1 }).catch((e) => e)

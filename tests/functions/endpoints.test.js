@@ -421,6 +421,8 @@ describe('GET /api/status', () => {
     expect(res.headers.get('Cache-Control')).toBe('public, max-age=15')
     expect(await res.json()).toEqual({ ok: true, live: true, eventName: 'Test Night', requestsOpen: true, tipsEnabled: false })
     res = await getStatus(ctx({ ...ENV, STRIPE_SECRET_KEY: 'sk_test_x' }))
+    expect((await res.json()).tipsEnabled).toBe(false)
+    res = await getStatus(ctx({ ...ENV, STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_WEBHOOK_SECRET: 'whsec_x' }))
     expect((await res.json()).tipsEnabled).toBe(true)
   })
 

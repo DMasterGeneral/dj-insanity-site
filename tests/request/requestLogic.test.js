@@ -3,18 +3,27 @@ import {
   CLIENT_ID_KEY,
   COOLDOWN_MS,
   LAST_REQUEST_KEY,
+  OPEN_POLLS_TO_GIVE_UP,
   RATE_LIMITED_MESSAGE,
+  TIP_CHOICES,
+  TIP_REUSE_MS,
+  canReuseTip,
   cooldownUntil,
   createLatestOnly,
   describeTyped,
   fieldErrorView,
+  formatTip,
   getClientId,
   markRequestSent,
+  parseTipDollars,
   randomClientId,
   searchErrorMessage,
   secondsLeft,
   shouldSearch,
   submitErrorView,
+  thanksPoll,
+  tipCentsFor,
+  tipsAvailable,
 } from '../../src/pages/request/requestLogic.js'
 import { ApiError } from '../../src/lib/api.js'
 import { TYPED_MAX, validateSongRequest } from '../../shared/contracts.js'
@@ -200,5 +209,78 @@ describe('error messages', () => {
 
   it('submit: a non-API error still has words', () => {
     expect(submitErrorView(new TypeError('x')).message).toMatch(/try again/)
+  })
+})
+
+describe('tips', () => {
+  it('offers tips only when the server says so and a publishable key was built in', () => {
+    expect(tipsAvailable({ tipsEnabled: true }, 'pk_test_abc')).toBe(true)
+    expect(tipsAvailable({ tipsEnabled: false }, 'pk_test_abc')).toBe(false)
+    expect(tipsAvailable({ tipsEnabled: true }, undefined)).toBe(false)
+    expect(tipsAvailable({ tipsEnabled: true }, '')).toBe(false)
+    expect(tipsAvailable({ tipsEnabled: true }, 'sk_test_oops')).toBe(false)
+  })
+
+  it('lists No tip, the presets and Custom, and formats whole dollars', () => {
+    expect(TIP_CHOICES).toEqual(['none', 500, 1000, 2000, 'custom'])
+    expect(formatTip(500)).toBe('$5')
+    expect(formatTip(20000)).toBe('$200')
+  })
+
+  it('parses custom whole-dollar tips from $1 to $200', () => {
+    expect(parseTipDollars('15')).toEqual({ ok: true, cents: 1500 })
+    expect(parseTipDollars(' $1 ')).toEqual({ ok: true, cents: 100 })
+    expect(parseTipDollars('200')).toEqual({ ok: true, cents: 20000 })
+    for (const bad of ['', '0', '201', '1000', '2.50', '-5', 'ten', '1e2', '5$5x']) {
+      expect(parseTipDollars(bad)).toEqual({ ok: false, error: 'Enter a whole-dollar tip from $1 to $200.' })
+    }
+  })
+
+  it('every accepted tip passes the shared validator', () => {
+    for (const cents of [100, 1500, 20000, ...TIP_CHOICES.filter((c) => typeof c === 'number')]) {
+      expect(validateSongRequest({ typed: 'x song', clientId: 'probe-client-id', tipCents: cents }).ok).toBe(true)
+    }
+  })
+
+  it('turns a choice into cents', () => {
+    expect(tipCentsFor('none', '99')).toEqual({ ok: true, cents: 0 })
+    expect(tipCentsFor(1000, '')).toEqual({ ok: true, cents: 1000 })
+    expect(tipCentsFor('custom', '7')).toEqual({ ok: true, cents: 700 })
+    expect(tipCentsFor('custom', '')).toMatchObject({ ok: false })
+  })
+
+  it('reuses the last checkout only for the same request within 25 minutes', () => {
+    const saved = { key: 'k1', createdAt: 1_000_000 }
+    expect(canReuseTip(saved, 'k1', 1_000_000 + 60_000)).toBe(true)
+    expect(canReuseTip(saved, 'k2', 1_000_000 + 60_000)).toBe(false)
+    expect(canReuseTip(saved, 'k1', 1_000_000 + TIP_REUSE_MS)).toBe(false)
+    expect(canReuseTip(null, 'k1', 1_000_000)).toBe(false)
+  })
+
+  it('a server tipCents error goes under the tip row', () => {
+    expect(fieldErrorView({ tipCents: 'Tips must be between $1 and $200.' })).toEqual({
+      closed: false,
+      fields: { tip: 'Tips must be between $1 and $200.' },
+      message: null,
+    })
+  })
+})
+
+describe('thanksPoll', () => {
+  it('finishes on paid or failed', () => {
+    expect(thanksPoll(2, { tipState: 'paid', checkout: 'open' })).toEqual({ view: 'paid', openCount: 0 })
+    expect(thanksPoll(0, { tipState: 'failed' })).toEqual({ view: 'failed', openCount: 0 })
+  })
+
+  it('gives up as unfinished only after 3 open answers in a row; anything else resets the count', () => {
+    const open = { tipState: 'pending', checkout: 'open' }
+    let step = thanksPoll(0, open)
+    expect(step).toEqual({ view: null, openCount: 1 })
+    step = thanksPoll(step.openCount, open)
+    expect(step).toEqual({ view: null, openCount: 2 })
+    expect(thanksPoll(step.openCount, { tipState: 'pending' })).toEqual({ view: null, openCount: 0 })
+    step = thanksPoll(step.openCount, open)
+    expect(step).toEqual({ view: 'unfinished', openCount: 3 })
+    expect(OPEN_POLLS_TO_GIVE_UP).toBe(3)
   })
 })

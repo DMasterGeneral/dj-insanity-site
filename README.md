@@ -3,7 +3,7 @@
 Website for a working DJ, live at https://dj-insanity-site.pages.dev. It has three parts:
 
 - **Landing page and booking** (`/`): who the DJ is, what they play, and a booking form.
-- **Live song requests** (`/request`): guests at an event search for a song and send it to the DJ (tips are built but stay hidden until Stripe is set up).
+- **Live song requests** (`/request`): guests at an event search for a song and send it to the DJ, optionally with a tip paid on the page (Apple Pay / Google Pay / Link / card). Tips stay hidden until Stripe is set up (see below).
 - **DJ dashboard** (`/dj`): the DJ signs in to see and work through requests and bookings, switch live mode on and off, and show a QR code for the request page.
 
 An overhaul is in progress. The plan, with the architecture, phase order and what is waiting on the owner, is in [`docs/OVERHAUL_PLAN.md`](docs/OVERHAUL_PLAN.md). Read it before changing anything; `CLAUDE.md` has the project rules.
@@ -30,12 +30,11 @@ src/
   components/            booking form and the Classic page's cards
   lib/                   API client, Turnstile loader, live-status hook
 shared/contracts.js      request/booking shapes and validation shared by the front end and the API
-functions/api/           status.js, search/deezer.js, requests/index.js, requests/[id].js, bookings.js, [[catchall]].js
-functions/_lib/          firestore.js, guard.js, ratelimit.js, notify.js, settings.js, search/
+functions/api/           status.js, search/deezer.js, requests/index.js, requests/[id].js, bookings.js, stripe/webhook.js, [[catchall]].js
+functions/_lib/          firestore.js, stripe.js, tips.js, guard.js, ratelimit.js, notify.js, settings.js, search/
 scripts/                 visual-check.mjs, make-admin.mjs, record-search-fixtures.mjs, make-share-images.mjs
 tests/                   Vitest tests (functions, shared, request, dj) and recorded search fixtures
 public/                  favicon, share image, _headers, robots.txt, intros/ (temporary intro showcase)
-worker/                  old stand-alone Stripe Worker, being replaced by functions/
 ```
 
 API endpoints (all JSON, same-origin):
@@ -44,8 +43,9 @@ API endpoints (all JSON, same-origin):
 |---|---|
 | `GET /api/status` | Public settings: live, event name, requests open, tips enabled. Cached 15 s. |
 | `GET /api/search/deezer?q=` | Deezer's song hits, unmerged (edge-cached 6 h). The request page fetches iTunes itself and merges the two in the browser, because iTunes answers 429 to Cloudflare's shared server IPs. |
-| `POST /api/requests` | Create a song request. |
-| `GET /api/requests/:id` | Status of one request, for the thank-you page. |
+| `POST /api/requests` | Create a song request. With a tip it also creates a Stripe Checkout Session and returns its `clientSecret`; the request reaches the DJ only once paid. |
+| `GET /api/requests/:id` | Status of one request, for the thank-you page (also settles a pending tip by asking Stripe). |
+| `POST /api/stripe/webhook` | Stripe's Checkout Session events (signature-checked): marks tips paid or failed. |
 | `POST /api/bookings` | Create a booking and email the DJ. |
 | anything else under `/api/` | JSON 404. |
 
@@ -90,6 +90,19 @@ There are two sets, and both have example files:
 On Cloudflare, both sets are set in Pages → Settings → Variables and Secrets, separately for Production and Preview.
 
 **Local and Preview values must point at a DEV Firebase project, never the production project `dj-insanity`.** Use Stripe test keys and the Turnstile always-pass test keys (in the example files). Every function degrades cleanly when its variable is missing, so leave unused ones blank.
+
+## Tips (Stripe) setup
+
+Tips use Stripe Checkout Sessions (`ui_mode=elements`) in **test mode**. They stay hidden until all of these are done (the owner does these; the code needs no change, and going live later only swaps the keys):
+
+1. **Restricted key**: Stripe Dashboard (test mode) -> Developers -> API keys -> *Create restricted key*, with **Checkout Sessions: Write** and nothing else. Its `rk_test_...` value is `STRIPE_SECRET_KEY`.
+2. **Webhook endpoint**: Developers -> Webhooks -> *Add endpoint* `https://<host>/api/stripe/webhook` (for the preview: `https://overhaul.dj-insanity-site.pages.dev/api/stripe/webhook`) with the events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`. Its signing secret (`whsec_...`) is `STRIPE_WEBHOOK_SECRET`.
+3. **Wallet domains**: Settings -> Payment method domains: add the site's domains (sandbox and live) so Apple Pay and Google Pay show.
+4. **Payment methods**: Settings -> Payment methods: turn off delayed-settlement methods (bank debits), so a tip is either paid or not within the guest's visit.
+5. **Variables**: in Cloudflare Pages -> Settings -> Variables and Secrets, for **Preview** first (Production later): `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (secrets) and `VITE_STRIPE_PUBLISHABLE_KEY` = the `pk_test_...` key (build-time). Redeploy so the build picks up the publishable key.
+6. **Turn on Tips** in the DJ dashboard.
+
+The old stand-alone `dj-insanity-tips` Worker is no longer used; delete it in Cloudflare once the owner confirms.
 
 ## Deploys
 

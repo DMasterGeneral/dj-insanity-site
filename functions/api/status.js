@@ -6,7 +6,7 @@ const CACHE_CONTROL = 'public, max-age=15';
 
 /**
  * GET /api/status: public site settings from settings/public, cached 15 s at the edge.
- * tipsEnabled is false unless Stripe is configured too.
+ * tipsEnabled is false unless both Stripe secrets (API key and webhook signing secret) are set too.
  * @param {{ request: Request, env: Record<string, string|undefined>, waitUntil?: (p: Promise<unknown>) => void }} context
  */
 export async function onRequestGet(context) {
@@ -29,7 +29,7 @@ export async function onRequestGet(context) {
     console.error('status: reading settings failed', err);
     settings = { ...DEFAULT_SETTINGS };
   }
-  settings.tipsEnabled = settings.tipsEnabled && !!(env && env.STRIPE_SECRET_KEY);
+  settings.tipsEnabled = settings.tipsEnabled && !!(env && env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET);
 
   const res = json(settings, 200, { 'Cache-Control': CACHE_CONTROL });
   if (cache) {

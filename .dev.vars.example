@@ -7,7 +7,10 @@
 # Firebase service-account JSON key, on one line (Firestore access for the functions)
 FIREBASE_SERVICE_ACCOUNT=
 
-# Stripe test-mode secret key (sk_test_...) and the webhook signing secret (whsec_...)
+# Stripe, TEST mode only: a restricted key (rk_test_...) with Checkout Sessions: Write, and the
+# webhook endpoint's signing secret (whsec_...; `stripe listen` prints one for local work).
+# Tips stay hidden unless both are set, settings/public.tipsEnabled is on, and the front end was
+# built with VITE_STRIPE_PUBLISHABLE_KEY (.env.local).
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 

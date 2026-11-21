@@ -227,8 +227,11 @@ export function _clearTokenCache() {
  * @property {string} projectId
  * @property {(path: string) => string} name  full resource name of a document path
  * @property {(path: string) => Promise<Record<string, unknown>|null>} get
+ * @property {(path: string) => Promise<{ data: Record<string, unknown>, updateTime: string }|null>} getWithTime
+ *   like get, plus the document's updateTime (for a patch precondition)
  * @property {(collection: string, id: string, data: Record<string, unknown>) => Promise<any>} create
- * @property {(path: string, data: Record<string, unknown>, fieldsToUpdate?: string[]) => Promise<any>} patch
+ * @property {(path: string, data: Record<string, unknown>, fieldsToUpdate?: string[], opts?: { updateTime?: string }) => Promise<any>} patch
+ *   with opts.updateTime the write fails (FAILED_PRECONDITION) unless the document is unchanged since that read
  * @property {(writes: object[]) => Promise<{ writeResults?: any[], commitTime?: string }>} commit
  */
 
@@ -279,9 +282,9 @@ export function createClient(sa) {
   /**
    * @param {string} path
    * @param {Record<string, unknown>} data
-   * @param {{ mask?: string[], mustNotExist?: boolean }} opts
+   * @param {{ mask?: string[], mustNotExist?: boolean, updateTime?: string }} opts
    */
-  function write(path, data, { mask, mustNotExist }) {
+  function write(path, data, { mask, mustNotExist, updateTime }) {
     const { plain, transforms } = splitSentinels(data);
     /** @type {Record<string, any>} */
     const w = { update: { name: name(path), fields: encodeFields(plain) } };
@@ -291,6 +294,7 @@ export function createClient(sa) {
     }
     if (transforms.length) w.updateTransforms = transforms;
     if (mustNotExist) w.currentDocument = { exists: false };
+    else if (updateTime) w.currentDocument = { updateTime };
     return w;
   }
 
@@ -299,9 +303,13 @@ export function createClient(sa) {
     projectId: sa.project_id,
     name,
     async get(path) {
+      const doc = await client.getWithTime(path);
+      return doc && doc.data;
+    },
+    async getWithTime(path) {
       try {
         const doc = await call('GET', `${base}/${path.replace(/^\/+/, '')}`);
-        return decodeFields(doc.fields || {});
+        return { data: decodeFields(doc.fields || {}), updateTime: doc.updateTime };
       } catch (err) {
         if (err instanceof FirestoreError && err.status === 404) return null;
         throw err;
@@ -310,8 +318,8 @@ export function createClient(sa) {
     create(collection, id, data) {
       return client.commit([write(`${collection}/${id}`, data, { mustNotExist: true })]);
     },
-    patch(path, data, fieldsToUpdate = Object.keys(data)) {
-      return client.commit([write(path, data, { mask: fieldsToUpdate })]);
+    patch(path, data, fieldsToUpdate = Object.keys(data), { updateTime } = {}) {
+      return client.commit([write(path, data, { mask: fieldsToUpdate, updateTime })]);
     },
     commit(writes) {
       return call('POST', `${base}:commit`, { writes });

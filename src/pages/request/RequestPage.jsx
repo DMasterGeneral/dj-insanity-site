@@ -1,28 +1,52 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { CalendarHeart, Check, Disc3 } from 'lucide-react';
 import { NAME_MAX, NOTE_MAX, validateSongRequest } from '../../../shared/contracts.js';
 import { apiPost } from '../../lib/api.js';
 import { createTurnstile } from '../../lib/turnstile.js';
 import { useLiveStatus } from '../../lib/useLiveStatus.js';
 import Button from '../../components/ui/Button.jsx';
+import Dialog from '../../components/ui/Dialog.jsx';
 import Field from '../../components/ui/Field.jsx';
 import SongSearch, { Artwork, ExplicitBadge } from './SongSearch.jsx';
 import {
+  TIP_CHOICES,
   browserStorage,
+  canReuseTip,
   cooldownUntil,
   describeTyped,
   fieldErrorView,
+  formatTip,
   getClientId,
   markRequestSent,
   secondsLeft,
   submitErrorView,
+  tipCentsFor,
+  tipsAvailable,
 } from './requestLogic.js';
 import '../../components/ui/ui.css';
 import './request.css';
 
-// /request: the guest song-request page (plan sections 4.1 Client and 4.2, no tips yet).
-// The browser never writes to Firestore: the request goes to POST /api/requests.
+// /request: the guest song-request page (plan sections 4.1 Client and 4.2).
+// The browser never writes to Firestore: the request goes to POST /api/requests. With a tip, the
+// server answers with a Checkout Session's clientSecret and the payment sheet opens; the request
+// reaches the DJ only once Stripe confirms the payment.
+
+// Stripe.js and react-stripe-js live in this chunk only. If it fails to load (offline), say so.
+const TipSheet = lazy(() =>
+  import('./TipSheet.jsx').catch(() => ({
+    default: function TipSheetUnavailable({ onClose }) {
+      return (
+        <Dialog open onClose={onClose} title="Payment unavailable" className="rq-sheet">
+          <p className="rq-notice rq-notice--error" role="alert">
+            The payment form didn't load. Check your connection and reload the page.
+          </p>
+        </Dialog>
+      );
+    },
+  })),
+);
 
 const PRODUCTION_HOST = 'dj-insanity-site.pages.dev';
 
@@ -90,7 +114,25 @@ function SongSummary({ song, size = 72 }) {
   );
 }
 
-function OpenRequests({ onClosed }) {
+function TipLoading({ onClose }) {
+  return (
+    <Dialog open onClose={onClose} title="Tip the DJ" className="rq-sheet" closeLabel="Close payment">
+      <p className="rq-loading" role="status">
+        <span className="rq-spinner" aria-hidden="true" />
+        Loading payment…
+      </p>
+    </Dialog>
+  );
+}
+
+/** "No tip" / "$5" / … / "Custom" */
+function tipLabel(choice) {
+  if (choice === 'none') return 'No tip';
+  if (choice === 'custom') return 'Custom';
+  return formatTip(choice);
+}
+
+function OpenRequests({ onClosed, tipsOn }) {
   const [storage] = useState(browserStorage);
   const [query, setQuery] = useState('');
   const [pick, setPick] = useState(/** @type {null | { song: any } | { typed: string }} */ (null));
@@ -103,6 +145,14 @@ function OpenRequests({ onClosed }) {
   const [until, setUntil] = useState(() => cooldownUntil(storage, Date.now()));
   const [now, setNow] = useState(() => Date.now());
   const [turnstile] = useState(() => createTurnstile('request'));
+  const [tipChoice, setTipChoice] = useState(/** @type {(typeof TIP_CHOICES)[number]} */ ('none'));
+  const [customTip, setCustomTip] = useState('');
+  // The last tipped request's checkout, reopened instead of POSTing again while nothing changed.
+  const [tipCheckout, setTipCheckout] = useState(
+    /** @type {null | { id: string, clientSecret: string, tipCents: number, key: string, createdAt: number }} */ (null),
+  );
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const navigate = useNavigate();
 
   const searchInput = useRef(/** @type {HTMLInputElement|null} */ (null));
   const cardTitle = useRef(/** @type {HTMLHeadingElement|null} */ (null));
@@ -162,11 +212,17 @@ function OpenRequests({ onClosed }) {
 
   async function submit() {
     if (!pick || phase === 'sending' || secondsLeft(until, Date.now()) > 0) return;
+    const tip = tipsOn ? tipCentsFor(tipChoice, customTip) : { ok: true, cents: 0 };
+    if (!tip.ok) {
+      setFieldErrors({ tip: tip.error });
+      setFailure(null);
+      return;
+    }
     const body = {
       ...('song' in pick ? { song: pick.song } : { typed: pick.typed }),
       note: note.trim() || undefined,
       requesterName: name.trim() || undefined,
-      tipCents: 0,
+      tipCents: tip.cents,
       clientId: getClientId(storage),
     };
     const check = validateSongRequest(body);
@@ -177,10 +233,21 @@ function OpenRequests({ onClosed }) {
       return;
     }
     clearErrors();
+    const tipKey = JSON.stringify(body);
+    if (tip.cents > 0 && canReuseTip(tipCheckout, tipKey, Date.now())) {
+      setSheetOpen(true);
+      return;
+    }
     setPhase('sending');
     try {
       const token = await turnstile.getToken(turnstileBox.current);
-      await apiPost('/api/requests', token ? { ...body, turnstileToken: token } : body);
+      const res = await apiPost('/api/requests', token ? { ...body, turnstileToken: token } : body);
+      if (tip.cents > 0) {
+        setTipCheckout({ id: res.id, clientSecret: res.clientSecret, tipCents: tip.cents, key: tipKey, createdAt: Date.now() });
+        setSheetOpen(true);
+        setPhase('edit');
+        return;
+      }
       const t = Date.now();
       flushSync(() => {
         setSentSong(pickedSong(pick));
@@ -205,6 +272,17 @@ function OpenRequests({ onClosed }) {
     }
   }
 
+  function tipPaid() {
+    if (!tipCheckout) return;
+    markRequestSent(storage, Date.now());
+    navigate(`/request/thanks?rid=${encodeURIComponent(tipCheckout.id)}`);
+  }
+
+  /** The payment's outcome is unknown: let the thanks page find out rather than risk paying twice. */
+  function tipUnsure() {
+    if (tipCheckout) navigate(`/request/thanks?rid=${encodeURIComponent(tipCheckout.id)}`);
+  }
+
   let content;
   if (phase === 'sent' && sentSong) {
     content = (
@@ -224,6 +302,9 @@ function OpenRequests({ onClosed }) {
   } else if (pick) {
     const song = pickedSong(pick);
     const sending = phase === 'sending';
+    const tipping = tipsOn && tipChoice !== 'none';
+    const shownTip = tipping ? tipCentsFor(tipChoice, customTip) : null;
+    const sendLabel = !tipping ? 'Send request' : shownTip?.ok ? `Send with ${formatTip(shownTip.cents)} tip` : 'Send with tip';
     content = (
       <form
         className="rq-form"
@@ -277,6 +358,51 @@ function OpenRequests({ onClosed }) {
           }}
         />
 
+        {tipsOn && (
+          <fieldset className="rq-tip" disabled={sending}>
+            <legend className="rq-tip__legend">
+              Tip the DJ<span className="ui-field__optional"> (optional)</span>
+            </legend>
+            <div className="rq-tip__options">
+              {TIP_CHOICES.map((c) => (
+                <label key={c} className={`rq-tip__opt${c === 'custom' ? ' rq-tip__opt--custom' : ''}`}>
+                  <input
+                    type="radio"
+                    name="rq-tip"
+                    value={String(c)}
+                    checked={tipChoice === c}
+                    onChange={() => {
+                      setTipChoice(c);
+                      if (fieldErrors.tip) dropFieldError('tip');
+                    }}
+                  />
+                  <span>{tipLabel(c)}</span>
+                </label>
+              ))}
+            </div>
+            {tipChoice === 'custom' ? (
+              <Field
+                id="rq-tip-custom"
+                label="Your tip in dollars"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={4}
+                placeholder="15"
+                value={customTip}
+                error={fieldErrors.tip}
+                hint="$1 to $200, whole dollars"
+                className="rq-tip__custom"
+                onChange={(e) => {
+                  setCustomTip(e.target.value);
+                  if (fieldErrors.tip) dropFieldError('tip');
+                }}
+              />
+            ) : (
+              fieldErrors.tip && <p className="ui-field__error">{fieldErrors.tip}</p>
+            )}
+          </fieldset>
+        )}
+
         {failure && (
           <div className="rq-notice rq-notice--error" role="alert">
             <p>{failure}</p>
@@ -287,7 +413,7 @@ function OpenRequests({ onClosed }) {
         )}
 
         <Button type="submit" className="rq-button-lg rq-button-block" disabled={sending || wait > 0}>
-          {sending ? 'Sending…' : wait > 0 ? `You can send another in ${wait} s` : 'Send request'}
+          {sending ? 'Sending…' : wait > 0 ? `You can send another in ${wait} s` : sendLabel}
         </Button>
       </form>
     );
@@ -299,6 +425,18 @@ function OpenRequests({ onClosed }) {
     <>
       {content}
       <div ref={turnstileBox} className="rq-turnstile" />
+      {sheetOpen && tipCheckout && (
+        <Suspense fallback={<TipLoading onClose={() => setSheetOpen(false)} />}>
+          <TipSheet
+            key={tipCheckout.clientSecret}
+            clientSecret={tipCheckout.clientSecret}
+            tipCents={tipCheckout.tipCents}
+            onClose={() => setSheetOpen(false)}
+            onPaid={tipPaid}
+            onUnsure={tipUnsure}
+          />
+        </Suspense>
+      )}
     </>
   );
 }
@@ -311,6 +449,7 @@ export default function RequestPage() {
   const loading = status.loading && !preview;
   const failed = status.error && !preview && !closedByServer;
   const open = !closedByServer && (preview || status.requestsOpen);
+  const tipsOn = tipsAvailable(status, import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
   return (
     <div className="rq-page">
@@ -329,7 +468,7 @@ export default function RequestPage() {
             </Button>
           </div>
         ) : open ? (
-          <OpenRequests onClosed={() => setClosedByServer(true)} />
+          <OpenRequests onClosed={() => setClosedByServer(true)} tipsOn={tipsOn} />
         ) : (
           <Closed />
         )}

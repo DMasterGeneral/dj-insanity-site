@@ -14,17 +14,22 @@ const FOCUSABLE =
  * Pass a class through `className` (added to the backdrop) and set your variables on it too, e.g.
  *   .design-a, .design-a-portal { --ui-accent: … }   <Dialog className="design-a-portal" …>
  *
+ * `dismissible={false}` (e.g. while a payment is confirming) hides the close button and ignores
+ * Escape and backdrop clicks until it is true again.
+ *
  * @param {{ open: boolean, onClose: () => void, title: React.ReactNode, children?: React.ReactNode,
- *           className?: string, closeLabel?: string }} props
+ *           className?: string, closeLabel?: string, dismissible?: boolean }} props
  */
-export default function Dialog({ open, onClose, title, children, className = '', closeLabel = 'Close' }) {
+export default function Dialog({ open, onClose, title, children, className = '', closeLabel = 'Close', dismissible = true }) {
   const titleId = useId();
   const dialogRef = useRef(/** @type {HTMLDivElement|null} */ (null));
   const onCloseRef = useRef(onClose);
+  const dismissibleRef = useRef(dismissible);
 
   useEffect(() => {
     onCloseRef.current = onClose;
-  }, [onClose]);
+    dismissibleRef.current = dismissible;
+  }, [onClose, dismissible]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -42,7 +47,7 @@ export default function Dialog({ open, onClose, title, children, className = '',
     function onKeyDown(e) {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onCloseRef.current();
+        if (dismissibleRef.current) onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab' || !dialog) return;
@@ -80,16 +85,18 @@ export default function Dialog({ open, onClose, title, children, className = '',
     <div
       className={`ui-dialog-backdrop ${className}`.trim()}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (dismissible && e.target === e.currentTarget) onClose();
       }}
     >
       <div ref={dialogRef} className="ui-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
         <h2 id={titleId} className="ui-dialog__title">
           {title}
         </h2>
-        <button type="button" className="ui-dialog__close" onClick={onClose} aria-label={closeLabel}>
-          <X size={20} aria-hidden="true" />
-        </button>
+        {dismissible && (
+          <button type="button" className="ui-dialog__close" onClick={onClose} aria-label={closeLabel}>
+            <X size={20} aria-hidden="true" />
+          </button>
+        )}
         {children}
       </div>
     </div>,

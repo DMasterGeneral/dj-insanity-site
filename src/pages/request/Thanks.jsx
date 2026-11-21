@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, Clock, Disc3, X } from 'lucide-react';
 import { ApiError, apiGet } from '../../lib/api.js';
 import Button from '../../components/ui/Button.jsx';
+import { thanksPoll } from './requestLogic.js';
 import '../../components/ui/ui.css';
 import './request.css';
 
@@ -13,14 +14,19 @@ const POLL_MS = 2000;
 const MAX_MS = 20000;
 const RID_RE = /^[A-Za-z0-9_-]{20,40}$/;
 
-/** @typedef {'generic'|'neutral'|'confirming'|'paid'|'failed'|'slow'} View */
+/** @typedef {'generic'|'neutral'|'confirming'|'paid'|'failed'|'unfinished'|'slow'} View */
 
 const VIEWS = {
   generic: { icon: Check, title: 'Thanks!', text: 'Want to hear something else? Send another request.' },
   neutral: { icon: Check, title: 'Thanks!', text: 'Want to hear something else? Send another request.' },
   confirming: { icon: null, title: 'Confirming your tip…', text: 'This takes a few seconds.' },
   paid: { icon: Check, title: 'Thanks — your tip is in', text: 'The DJ has your request.' },
-  failed: { icon: X, title: "The payment didn't go through", text: 'Please try again from the request page.' },
+  failed: {
+    icon: X,
+    title: "The payment didn't go through",
+    text: "So your request wasn't sent. You can send it again from the request page.",
+  },
+  unfinished: { icon: X, title: 'Payment not finished', text: "Your request hasn't been sent. Go back to the request page to try again." },
   slow: { icon: Clock, title: 'Thanks!', text: "We'll add it as soon as the payment clears." },
 };
 
@@ -40,6 +46,7 @@ export default function Thanks() {
     let stopped = false;
     /** @type {ReturnType<typeof setTimeout> | undefined} */
     let next;
+    let openCount = 0;
     const controller = new AbortController();
     /** @param {View} v */
     const finish = (v) => {
@@ -55,7 +62,9 @@ export default function Thanks() {
     async function poll() {
       try {
         const d = await apiGet(`/api/requests/${encodeURIComponent(rid)}`, { signal: controller.signal });
-        if (d.tipState === 'paid' || d.tipState === 'failed') return finish(d.tipState);
+        const step = thanksPoll(openCount, d);
+        openCount = step.openCount;
+        if (step.view) return finish(step.view);
       } catch (err) {
         if (stopped) return undefined;
         if (err instanceof ApiError && err.status === 404) return finish('neutral');
@@ -87,7 +96,7 @@ export default function Thanks() {
           </a>
         </header>
         <section className="rq-done" aria-live="polite" aria-busy={busy}>
-          <div className={`rq-done__badge${view === 'failed' ? ' rq-done__badge--bad' : ''}`} aria-hidden="true">
+          <div className={`rq-done__badge${view === 'failed' || view === 'unfinished' ? ' rq-done__badge--bad' : ''}`} aria-hidden="true">
             {busy ? <span className="rq-spinner rq-spinner--lg" /> : <Icon size={30} strokeWidth={3} />}
           </div>
           <h1 className="rq-done__title">{title}</h1>

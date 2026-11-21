@@ -1,6 +1,6 @@
 # DJ Insanity site — overhaul architecture and build plan
 
-Written 2026-11-15. Status (2026-11-16): **Phases 0, 1, 2, 4, 5 and 6 are built on the `overhaul` branch; Phase 3 (tips) and parts of Phase 7 wait on the owner.** See section 9 for what was built, what changed from this plan, and what is still open.
+Written 2026-11-15. Status (2026-11-21): **Phases 0–6 are built on the `overhaul` branch (Phase 3, tips, ships dark until Stripe test keys and a dev Firebase project exist); parts of Phase 7 wait on the owner.** See section 9 for what was built, what changed from this plan, and what is still open.
 
 Related: `CLAUDE.md` (repo conventions), git tag `v1-original` (the site exactly as it was before this work).
 
@@ -14,7 +14,7 @@ Related: `CLAUDE.md` (repo conventions), git tag `v1-original` (the site exactly
 | Branch previews | `https://<branch>.dj-insanity-site.pages.dev` |
 | Intro showcase | Live at `/intros/` — four candidates, five speeds. The DJ has not picked one yet. |
 | Original site | Tagged `v1-original`. |
-| Tip-payment Worker | `dj-insanity-tips`, deployed by hand, Stripe **test** mode. To be retired (section 3). |
+| Tip-payment Worker | `dj-insanity-tips`, deployed by hand, Stripe **test** mode. Its source (`worker/`) was deleted in Phase 3; the deployed Worker stays until the owner confirms it can go. |
 | GitHub Pages copy | Broken (serves unbuilt source). To be switched off in Phase 7. |
 
 ### Decisions the owner has made
@@ -69,7 +69,7 @@ Browser (React SPA)
   ├─ GET  /api/status ───────────────┐
   ├─ GET  /api/search?q= ────────────┤   Cloudflare Pages Functions  (functions/api/*)
   ├─ POST /api/requests ─────────────┤     ├─ Deezer + iTunes (search, cached at the edge)
-  ├─ GET  /api/requests/:id ─────────┤     ├─ Stripe REST (PaymentIntents) + webhook verify
+  ├─ GET  /api/requests/:id ─────────┤     ├─ Stripe REST (Checkout Sessions) + webhook verify
   ├─ POST /api/bookings ─────────────┤     ├─ Firestore REST as a service account
   └─ Stripe.js (Payment / Express    │     ├─ Turnstile verify, KV rate limits
      Checkout Elements)              │     └─ Resend (email) [+ optional push]
@@ -88,7 +88,7 @@ functions/
   api/
     status.js              GET   public settings
     search.js              GET   merged song search
-    requests/index.js      POST  create request (and PaymentIntent when tipping)
+    requests/index.js      POST  create request (and a Checkout Session when tipping)
     requests/[id].js       GET   status for the thank-you page
     bookings.js            POST  create booking + notify
     stripe/webhook.js      POST  Stripe events
@@ -127,7 +127,8 @@ requests/{id}
                source: 'deezer'|'itunes'|'both'|'typed'|'link', deezerId?, itunesId?, isrc?, url? }
   note?:     string ≤ 140          requesterName?: string ≤ 40
   status:    'awaiting_payment' | 'pending' | 'played' | 'dismissed'
-  tip:       { amountCents: int, state: 'none'|'pending'|'paid'|'failed', paymentIntentId? }
+  tip:       { amountCents: int, state: 'none'|'pending'|'paid'|'failed', checkoutSessionId? }
+  paidAt?:   timestamp (set when Stripe confirms the tip)
   createdAt, updatedAt: timestamp   clientHash, ipHash: string (salted SHA-256, for rate limits only)
 
 bookings/{id}
@@ -137,7 +138,8 @@ bookings/{id}
 
 settings/public        { live: bool, eventName?: string, requestsOpen: bool, tipsEnabled: bool, updatedAt }
 admins/{uid}           { email }            // presence = may use the dashboard
-stripeEvents/{eventId} { processedAt }      // webhook idempotency
+// No webhook-event ledger: the request doc is the tip state machine (only a 'pending' tip changes,
+// and every tip write carries the read's updateTime as a precondition), so replays are no-ops.
 ```
 Old documents (`type/content/title/tip:number/timestamp`) exist from 2025 testing. The dashboard must tolerate them or Phase 1 deletes them — ask the owner before deleting.
 
@@ -168,10 +170,10 @@ All responses are JSON `{ ok: true, … }` or `{ ok: false, error: { code, messa
 |---|---|---|---|
 | `GET /api/status` | — | `{ live, eventName, requestsOpen, tipsEnabled }` | Cached 15 s at the edge. `tipsEnabled` is also false when Stripe secrets are absent. |
 | `GET /api/search?q=` | `q` 2–80 chars | `{ results: Song[] }` (max 8) | Edge cache 6 h per normalised query, browser cache 5 min. |
-| `POST /api/requests` | `{ song \| typed, note?, requesterName?, tipCents, clientId, turnstileToken }` | `{ id, status, clientSecret? }` | Refused when `requestsOpen` is false. `tipCents` 0 or 100–20000. With a tip: creates the PaymentIntent (metadata `requestId`), writes the doc as `awaiting_payment`, returns `clientSecret`. |
-| `GET /api/requests/:id` | — | `{ status, tipState }` | IDs are 20+ random chars, so this is not enumerable. Used by the thank-you page to poll. |
+| `POST /api/requests` | `{ song \| typed, note?, requesterName?, tipCents, clientId, turnstileToken }` | `{ id, status, clientSecret? }` | Refused when `requestsOpen` is false. `tipCents` 0 or 100–20000. With a tip (only when `tipsEnabled` and both Stripe secrets are set, else 503 `tips_unavailable`): creates a Checkout Session (`ui_mode=elements`, metadata `requestId`, expires in 31 min), writes the doc as `awaiting_payment` with `tip.checkoutSessionId`, returns the session's `clientSecret`. If the doc write fails the session is expired. |
+| `GET /api/requests/:id` | — | `{ status, tipState }` | IDs are 20+ random chars, so this is not enumerable. Used by the thank-you page to poll. While a tip is pending it retrieves the Checkout Session and settles it (settle on read), so a paid request reaches the DJ even if the webhook is late; Stripe errors just return the current state. |
 | `POST /api/bookings` | form fields + `turnstileToken` | `{ id }` | Validates, writes, then sends notifications. A notification failure must not fail the booking; log it and set `notifyError` on the doc. |
-| `POST /api/stripe/webhook` | Stripe event | `200` | Verify `Stripe-Signature` (HMAC-SHA256, 5 min tolerance). On `payment_intent.succeeded`: in one Firestore transaction, skip if `stripeEvents/{id}` exists; set request `status: 'pending'`, `tip.state: 'paid'`, `tip.amountCents = amount_received`. On `payment_intent.payment_failed`: `tip.state: 'failed'`. |
+| `POST /api/stripe/webhook` | Stripe event | `200` | Verify `Stripe-Signature` (HMAC-SHA256, 5 min tolerance; 400 if bad). `checkout.session.completed` / `async_payment_succeeded` with `payment_status: 'paid'`: request `status: 'pending'`, `tip.state: 'paid'`, `tip.amountCents = amount_total`, `paidAt`. `async_payment_failed` / `expired`: `tip.state: 'failed'` (status stays `awaiting_payment`). Only a tip still `pending` changes; writes carry an `updateTime` precondition (a conflict is re-read once). Firestore errors → 500 so Stripe retries; unknown request → 200. |
 
 **Abuse limits** (KV counters keyed by `ipHash`, fixed windows): requests 6 per 10 min, bookings 3 per hour. Search is not counted (cached, read-only). Turnstile runs in invisible mode on the two POST forms so guests at a party see no challenge.
 
@@ -179,7 +181,7 @@ All responses are JSON `{ ok: true, … }` or `{ ok: false, error: { code, messa
 | Name | Kind | Used by |
 |---|---|---|
 | `FIREBASE_SERVICE_ACCOUNT` | secret (the JSON key) | all functions that touch Firestore |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | secret | tips |
+| `STRIPE_SECRET_KEY` (a restricted `rk_test_…` key with Checkout Sessions: Write), `STRIPE_WEBHOOK_SECRET` | secret | tips |
 | `RESEND_API_KEY`, `NOTIFY_EMAIL_TO` | secret / plain | booking email |
 | `TURNSTILE_SECRET_KEY` | secret | form protection |
 | `HASH_SALT` | secret | ip/client hashing |
@@ -224,8 +226,8 @@ Local development: `.dev.vars` (git-ignored) and `npx wrangler pages dev -- npm 
 ### 4.2 Song requests and tips
 - **Request page states:** closed (not live) → friendly "requests open during events" screen with a Book link; open → search → selected song card → optional name + note → tip choice → submit.
 - **No tip:** `POST /api/requests`, then an inline confirmation with "Request another". A 30 s cool-down per device after a successful request.
-- **With a tip** (only when `tipsEnabled`): preset amounts $5 / $10 / $20 plus custom ($1–$200). Submit calls `POST /api/requests`, which returns `clientSecret`. Open a bottom sheet with the **Express Checkout Element** (Apple Pay / Google Pay) above the **Payment Element**. Confirm with `redirect: 'if_required'`; `return_url` is `/request/thanks?rid=<id>`. The thanks page polls `GET /api/requests/:id` until `tipState` is `paid` or `failed` (max ~20 s, then "we'll add it as soon as the payment clears"). Nothing depends on `sessionStorage`.
-- Abandoned `awaiting_payment` docs never show on the dashboard. The dashboard query ignores them; a cleanup of ones older than 24 h can run inside the webhook handler opportunistically.
+- **With a tip** (only when `tipsEnabled` and the build has `VITE_STRIPE_PUBLISHABLE_KEY`): No tip (default) / $5 / $10 / $20 / Custom ($1–$200, whole dollars). Submit calls `POST /api/requests`, which creates a **Checkout Session** (`ui_mode=elements`; owner chose Stripe's recommended API on 2026-11-21) and returns its `clientSecret`. Open a bottom sheet (`TipSheet`, `CheckoutElementsProvider`) with the **Express Checkout Element** (Apple Pay / Google Pay / Link) above the email (Contact Details Element) and **Payment Element**. Confirm with `checkout.confirm({ redirect: 'if_required' })`; on success go to `/request/thanks?rid=<id>`, which is also the session's `return_url`. The sheet cannot be closed while a payment is confirming. Closing it keeps the song; reopening with the same request and tip reuses the session. The thanks page polls `GET /api/requests/:id` until `tipState` is `paid` or `failed` (max ~20 s, then "we'll add it as soon as the payment clears"). Nothing depends on `sessionStorage`.
+- Abandoned `awaiting_payment` docs never show on the dashboard (it lists only `pending`). The session expires after 31 min and the `checkout.session.expired` webhook marks the tip `failed`.
 - Stripe.js is loaded only when the tip sheet opens (`import()`), never on the landing page.
 - Errors are always shown to the visitor in plain words with a retry.
 - Until the DJ finishes Stripe onboarding, production runs with test keys or with `tipsEnabled: false`. Apple Pay needs the site's domain added under Stripe → Settings → Payment method domains (owner action).
@@ -312,7 +314,7 @@ Work on `overhaul` (preview: https://overhaul.dj-insanity-site.pages.dev). Commi
 - Done when: the 8 explicit-title checks and a typed request work on a phone-sized preview; nothing overlaps; a failed submit shows a message.
 
 **Phase 3 — Tips** *(ship dark until Stripe is ready)*
-- PaymentIntent in `/api/requests`, webhook with signature check and idempotency, `TipSheet` with Express Checkout + Payment Element, `Thanks` page; delete `TipDJ.jsx`, `PaymentSuccess.jsx`, `worker/`.
+- Checkout Session (`ui_mode=elements`) in `/api/requests`, webhook with signature check, settle on read in `GET /api/requests/:id`, `TipSheet` with Express Checkout + Payment Element, `Thanks` page; delete `TipDJ.jsx`, `PaymentSuccess.jsx`, `worker/`.
 - Done when: in Stripe test mode a paid request appears on the dashboard with a paid chip, an abandoned payment never appears, a replayed webhook changes nothing, and a forged thanks URL does nothing.
 - After owner confirmation: delete the `dj-insanity-tips` Worker.
 
@@ -344,7 +346,7 @@ Dependencies: 1 → 2 → 3 → 4 share the data model and should go in order. 5
 1. **Firebase console** — Project settings → Service accounts → *Generate new private key* (becomes `FIREBASE_SERVICE_ACCOUNT`). Authentication → Settings → User actions → untick *Enable create (sign-up)*. Firestore → Rules → paste `firestore.rules` and publish (Phase 1). Optionally paste the current rules to the session first so the cause of today's refusals is confirmed.
 2. **Cloudflare** — add the secrets in section 3.6 for Production and Preview; create a Turnstile widget (invisible) for `dj-insanity-site.pages.dev`. Alternative: run `npx wrangler login` once so the session can set these from the command line.
 3. **Resend** — create a free account under the address that should receive booking emails; create an API key.
-4. **Stripe (DJ)** — finish onboarding. If he is not a registered company, choosing *Individual / sole proprietor* and using his SSN in place of an EIN is the usual route — he should confirm on Stripe's form. Then: live keys, a webhook endpoint for `/api/stripe/webhook`, and the site's domain under Payment method domains for Apple Pay.
+4. **Stripe (DJ)** — finish onboarding. If he is not a registered company, choosing *Individual / sole proprietor* and using his SSN in place of an EIN is the usual route — he should confirm on Stripe's form. Then: live keys, a webhook endpoint for `/api/stripe/webhook`, and the site's domain under Payment method domains for Apple Pay. The test-mode setup steps are in the README ("Tips (Stripe) setup").
 5. **Decisions** — intro and speed; text-alert option; landing design after Phase 6.
 6. **Content** — photos, bio, city, real testimonials, gear list, socials, contact email.
 
@@ -383,7 +385,20 @@ Built by Opus "builder" sessions under a manager session, each phase in its own 
 - A **dev Firebase project** (Firestore + email/password auth + service-account key + web config) for end-to-end proof of requests, bookings and the dashboard. Nothing has been written to any Firestore yet.
 - Production: service-account key and other secrets in Cloudflare, publish `firestore.rules`, disable public sign-up, run `make-admin.mjs` for the DJ's account.
 - Resend key (booking emails); optional ntfy topic for push alerts.
-- Stripe test keys → Phase 3 (tips) is not started.
+- Stripe test setup (README "Tips (Stripe) setup") → Phase 3 (tips) is built but not yet proven end to end (see "Phase 3 build" below).
 - Decisions: intro + speed; landing design A/B/C; real content for the `sample`-tagged items.
 
 **Not verified yet**: anything against a real Firestore, Resend, Turnstile with real keys, real phones/Safari, the intro on low-end phones.
+
+### Phase 3 build (2026-11-21)
+
+**Built (ships dark):** `functions/_lib/stripe.js` (hand-rolled REST client pinned to `Stripe-Version: 2026-10-28.endive`; Checkout Sessions create / retrieve / expire; WebCrypto HMAC webhook check), `functions/_lib/tips.js` (`settle`), the tip path of `POST /api/requests`, `POST /api/stripe/webhook`, settle on read in `GET /api/requests/:id`, `tipsEnabled` now also needs `STRIPE_WEBHOOK_SECRET`; on the page, the tip row and a lazy-loaded `TipSheet` (Stripe code is only in its own chunk, never in the landing or first `/request` load); `Dialog` got `dismissible={false}`; `worker/` deleted (the deployed `dj-insanity-tips` Worker stays until the owner confirms). Packages pinned: `@stripe/stripe-js` 10.2.1, `@stripe/react-stripe-js` 7.0.1.
+
+**Changed from the plan, and why**
+- **Checkout Sessions instead of PaymentIntents.** The owner chose Stripe's recommended API (Checkout Sessions with `ui_mode=elements`, Payment Element + Express Checkout Element) on 2026-11-21. Stripe's own docs steer new Elements integrations there; it uses dynamic payment methods (no `payment_method_types`) and fulfilment from `checkout.session.*` events.
+- **No `stripeEvents` ledger and no Idempotency-Key** (Professor review). The request doc is the state machine: only a tip still `pending` can change, and every tip write carries the `updateTime` of the read it was based on. A replayed event, an `expired` after `paid`, or an event after the DJ marked the request played all change nothing.
+- **Settle on read** (Professor review). The thanks page's poll asks Stripe about a pending session and applies the same `settle`, so a paid request reaches the DJ even if the webhook is late or misconfigured. The webhook is still what makes it reliable when the guest closes the page.
+- Checkout Sessions need the payer's email, so the sheet includes Stripe's Contact Details Element (wallets supply it themselves).
+
+**Not verified yet:** a real test payment end to end (needs a dev Firebase project, a restricted test key, a webhook secret and a test publishable key); Apple Pay / Google Pay on real phones; the Stripe sheet with a real session.
+

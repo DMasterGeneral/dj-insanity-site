@@ -1,5 +1,5 @@
 // Pure helpers for the guest request page. No React, no DOM: unit-tested in tests/request/.
-import { validateSongRequest } from '../../../shared/contracts.js';
+import { TIP_MAX_CENTS, TIP_MIN_CENTS, TIP_PRESETS_CENTS, validateSongRequest } from '../../../shared/contracts.js';
 import { ApiError } from '../../lib/api.js';
 
 export const CLIENT_ID_KEY = 'djInsanity.clientId';
@@ -142,6 +142,82 @@ export function shouldSearch(text) {
   return q.length >= SEARCH_MIN && q.length <= SEARCH_MAX && !/^https?:\/\//i.test(q);
 }
 
+// ---- Tips ---------------------------------------------------------------------------------
+
+/** The tip row's choices, in order: 'none' (the default), the preset amounts in cents, 'custom'. */
+export const TIP_CHOICES = Object.freeze(['none', ...TIP_PRESETS_CENTS, 'custom']);
+
+/** A checkout session is reused for this long; Stripe expires it after 31 min. */
+export const TIP_REUSE_MS = 25 * 60 * 1000;
+
+/**
+ * Whether to offer tips: the server says they are on and the page was built with a publishable key.
+ * @param {{ tipsEnabled?: boolean }} status
+ * @param {string | undefined} publishableKey
+ */
+export function tipsAvailable(status, publishableKey) {
+  return status.tipsEnabled === true && typeof publishableKey === 'string' && publishableKey.startsWith('pk_');
+}
+
+/** "$5" for 500. Tips are whole dollars. */
+export function formatTip(cents) {
+  return `$${Math.round(cents / 100)}`;
+}
+
+/**
+ * A custom tip as typed (whole dollars; "$" and spaces allowed) in cents.
+ * @param {string} text
+ * @returns {{ ok: true, cents: number } | { ok: false, error: string }}
+ */
+export function parseTipDollars(text) {
+  const t = String(text).replace(/[$\s]/g, '');
+  const range = `Enter a whole-dollar tip from ${formatTip(TIP_MIN_CENTS)} to ${formatTip(TIP_MAX_CENTS)}.`;
+  if (!/^\d{1,6}$/.test(t)) return { ok: false, error: range };
+  const cents = Number(t) * 100;
+  if (cents < TIP_MIN_CENTS || cents > TIP_MAX_CENTS) return { ok: false, error: range };
+  return { ok: true, cents };
+}
+
+/**
+ * The tip the guest chose, in cents (0 for none).
+ * @param {(typeof TIP_CHOICES)[number]} choice
+ * @param {string} customText
+ * @returns {{ ok: true, cents: number } | { ok: false, error: string }}
+ */
+export function tipCentsFor(choice, customText) {
+  if (choice === 'none') return { ok: true, cents: 0 };
+  if (choice === 'custom') return parseTipDollars(customText);
+  return { ok: true, cents: /** @type {number} */ (choice) };
+}
+
+/**
+ * Whether the last tip checkout can be reopened instead of starting a new one: the same request
+ * body (song, name, note, tip) and young enough that Stripe has not expired the session.
+ * @param {{ key: string, createdAt: number } | null} saved
+ * @param {string} key  JSON of the POST body without the Turnstile token
+ * @param {number} now
+ */
+export function canReuseTip(saved, key, now) {
+  return !!saved && saved.key === key && now - saved.createdAt < TIP_REUSE_MS;
+}
+
+/** Polls in a row that must say the checkout is still open before the thanks page gives up. */
+export const OPEN_POLLS_TO_GIVE_UP = 3;
+
+/**
+ * One GET /api/requests/:id answer on the thanks page: the view to finish with (null = keep
+ * polling) and the new count of consecutive "checkout still open" answers. Several in a row are
+ * needed because right after an in-page confirm the session can still read as open briefly.
+ * @param {number} openCount
+ * @param {{ tipState?: string, checkout?: string }} answer
+ * @returns {{ view: 'paid'|'failed'|'unfinished'|null, openCount: number }}
+ */
+export function thanksPoll(openCount, answer) {
+  if (answer.tipState === 'paid' || answer.tipState === 'failed') return { view: answer.tipState, openCount: 0 };
+  const n = answer.checkout === 'open' ? openCount + 1 : 0;
+  return { view: n >= OPEN_POLLS_TO_GIVE_UP ? 'unfinished' : null, openCount: n };
+}
+
 // ---- Errors -------------------------------------------------------------------------------
 
 export const RATE_LIMITED_MESSAGE = "You've sent a lot of requests — try again in a few minutes.";
@@ -160,7 +236,7 @@ export function searchErrorMessage(err) {
   return "Search isn't working right now. You can still request it as written below.";
 }
 
-const FIELD_OF = { song: 'song', typed: 'song', note: 'note', requesterName: 'name' };
+const FIELD_OF = { song: 'song', typed: 'song', note: 'note', requesterName: 'name', tipCents: 'tip' };
 
 /**
  * Turn a failed POST /api/requests into what the page shows.
